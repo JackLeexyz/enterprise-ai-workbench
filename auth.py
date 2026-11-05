@@ -5,6 +5,9 @@ import hashlib
 import hmac
 import secrets
 
+SESSION_SECONDS = 8 * 3600
+REMEMBER_SECONDS = 7 * 24 * 3600
+
 
 def password_hash(password: str) -> str:
     salt = secrets.token_bytes(16)

@@ -58,6 +58,21 @@ check("knowledge editor assistant reviewer and admin templates render", () => {
   for (const view of ["library", "editor", "queue", "conversation", "composer", "references", "login", "newSource", "newDocument", "importList", "importForm"]) assert.equal(typeof context.WORKBENCH_VIEWS[view](ui()), "string");
   for (const tab of ["sources", "templates", "accounts", "ai"]) { state.adminTab = tab; assert.match(context.WORKBENCH_VIEWS.admin(ui()), /管理后台/); }
 });
+check("demo login offers fixed role choices and an optional remembered session without embedding passwords", () => {
+  const demo = { ...ui(), state: { ...state, loginOptions: { demo: true, accounts: [{ username: "writer", label: "写作员工" }, { username: "reviewer", label: "审核同事" }, { username: "admin", label: "管理员" }] } } };
+  const html = context.WORKBENCH_VIEWS.login(demo);
+  assert.equal((html.match(/data-login-account/g) || []).length, 3);
+  assert.match(html, /value="writer" checked/);
+  assert.match(html, /name="remember"/);
+  assert.match(html, /autocomplete="current-password"/);
+  assert.doesNotMatch(html, /name="password"[^>]*value=/);
+  assert.doesNotMatch(context.WORKBENCH_VIEWS.login(ui()), /data-login-account|name="remember"/);
+});
+check("demo account password controls use eight characters while normal controls remain strict", () => {
+  const demo = { ...ui(), state: { ...state, loginOptions: { demo: true } } };
+  assert.match(context.WORKBENCH_MANAGEMENT_VIEWS.accountForm(demo), /minlength="8"/);
+  assert.match(context.WORKBENCH_MANAGEMENT_VIEWS.accountForm(ui()), /minlength="20"/);
+});
 check("file preview escapes metadata warnings and markdown rather than rendering HTML", () => {
   const bad = '<img src=x onerror="alert(1)">';
   const html = context.WORKBENCH_VIEWS.importPreview(ui(), { id: "imp1", filename: bad + ".md", file_size: 128, status: "preview", attempts: 1, characters: 25, warnings: [bad], sections: [{ title: bad, text: bad }] });
@@ -387,7 +402,7 @@ check("local icon library contains template and dialog tool icons", () => {
   for (const name of usedIcons) assert.ok(lucide.icons[name.split("-").map(part => part[0].toUpperCase() + part.slice(1)).join("")], name);
 });
 
-function runtime(user = users[0]) {
+function runtime(user = users[0], loginOptions = { demo: false, accounts: [], password_min_length: 20, remember_seconds: 28800 }) {
   const listeners = new Map();
   const node = () => ({ dataset: {}, innerHTML: "", textContent: "", disabled: false, isConnected: true, classList: { add() {}, remove() {}, toggle() {} }, querySelector() { return null; }, querySelectorAll() { return []; }, setAttribute() {}, focus() {}, append() {}, remove() {}, click() {}, scrollIntoView() {} });
   const root = node(), dialog = node(), toast = node();
@@ -429,7 +444,8 @@ function runtime(user = users[0]) {
     }
     let result = {}, error;
     if (endpoint.endsWith("/revisions") && failNetwork) { failNetwork = false; throw new Error("offline"); }
-    if (endpoint === "/session") result = { ...user, csrf: "mock-csrf" };
+    if (endpoint === "/login-options") result = loginOptions;
+    else if (endpoint === "/session") result = { ...user, csrf: "mock-csrf" };
     else if (endpoint === "/sources") {
       const category = body?.category_id ? database.categories.find(item => item.id === body.category_id && item.active) : database.categories[0];
       if (body && !category) error = { code: "CATEGORY_UNAVAILABLE", message: "分类已停用，请重新选择。" };
@@ -627,9 +643,10 @@ function runtime(user = users[0]) {
   function input(selector, value, dataset = {}) { const item = { ...node(), value, dataset, matches: query => query.split(",").includes(selector) }; listeners.get("input")({ target: item }); }
   async function change(selector, value, values) {
     const recipients = { hidden: false }, disclosure = { hidden: false }, confirm = { required: true, checked: true };
-    const form = { values, dataset: {}, querySelector: key => key === "[data-artifact-recipients]" ? recipients : disclosure, elements: { namedItem: () => confirm } };
+    const fields = { username: { value: "writer" }, password: { value: "not-a-real-secret", focus() {} } };
+    const form = { values, dataset: {}, querySelector: key => key === "[data-artifact-recipients]" ? recipients : disclosure, elements: { namedItem: name => selector === "[data-login-account]" ? fields[name] : confirm } };
     listeners.get("change")({ target: { ...node(), value, form, matches: query => query === selector } }); await flush();
-    return { recipients, disclosure, confirm };
+    return { recipients, disclosure, confirm, fields };
   }
   async function poll() { for (const [id, timer] of timers) if (timer.delay === 1000) { timers.delete(id); await timer.fn(); await flush(); return true; } return false; }
   return { root, dialog, toast, calls, downloads, database, click, submit, input, change, poll, flush, holdChat, setFailChatJSON: () => { failChatJSON = true; }, setDialogForm: values => { dialogForm = { values }; }, setFailSave: () => { failSave = true; }, setFailNetwork: () => { failNetwork = true; }, setFailJSON: () => { failJSON = true; }, setFailRecords: () => { failRecords = true; }, setFailManagementJSON: () => { failManagementJSON = true; }, setFailMessages: () => { failMessages = true; }, advanceBeforeDraftRead: () => { advanceBeforeDraftRead = true; }, denyEvidence: () => { denyEvidence = true; }, denyArtifact: () => { denyArtifact = true; } };
@@ -641,6 +658,16 @@ function templateFormValues(item) {
   return values;
 }
 async function controllerChecks() {
+  const loginApp = runtime(users[0], { demo: true, accounts: [{ username: "writer", label: "写作员工" }, { username: "admin", label: "管理员" }] });
+  await loginApp.flush();
+  const choice = await loginApp.change("[data-login-account]", "admin");
+  check("choosing an account fills only its username and clears the previous account password", () => { assert.equal(choice.fields.username.value, "admin"); assert.equal(choice.fields.password.value, ""); });
+  await loginApp.submit("login", { username: "writer", password: "test-only-value", remember: "on" });
+  check("remembered login sends an explicit boolean without a credential idempotency cache", () => { const call = loginApp.calls.find(item => item.endpoint === "/session" && item.body); assert.equal(call.body.remember, true); });
+  await loginApp.submit("login", { username: "writer", password: "test-only-value" });
+  check("unchecked remembered login is explicitly false", () => { const call = loginApp.calls.filter(item => item.endpoint === "/session" && item.body).at(-1); assert.equal(call.body.remember, false); });
+  const short = await loginApp.submit("account-edit", { username: "demo.test", name: "测试", role: "employee", password: "8letters", password_confirm: "8letters" });
+  check("demo controller permits eight-character test passwords through the sensitive account endpoint", () => { assert.equal(loginApp.calls.filter(item => item.endpoint === "/admin/users" && item.body).length, 1); });
   await conversationControllerChecks();
   const readRaceApp = runtime(); await readRaceApp.flush(); readRaceApp.advanceBeforeDraftRead(); await readRaceApp.click("document", { id: "proposal" });
   check("document and draft revision read race pauses editing rather than mixing snapshots", () => { assert.match(readRaceApp.toast.textContent, /正式修订在读取时发生变化/); assert.match(readRaceApp.root.innerHTML, /本页编辑尚未覆盖/); assert.equal(readRaceApp.calls.filter(item => item.method === "POST" && item.endpoint.endsWith("/draft")).length, 0); });
@@ -737,7 +764,7 @@ async function controllerChecks() {
   await versionApp.submit("import-confirm", { parent_source_id: "weekly_v2", title: "虚构 PDF 新版", category_id: "cat_other", label: "v3" }, { id: versionJob.id, targetVersion: "3" });
   check("file confirmation sends parsed import id and optimistic family version", () => { const call = versionApp.calls.filter(call => call.endpoint === "/sources/weekly_v2/versions").at(-1); assert.equal(call.body.import_id, versionJob.id); assert.equal(call.body.base_version, 3); assert.equal(versionJob.status, "committed"); assert.equal(versionApp.database.sources.at(-1).sections[0].page_number, 1); });
   const app = runtime(); await app.flush();
-  check("controller boots using session and eleven API resources", () => { assert.match(app.root.innerHTML, /功能模块/); assert.equal(app.calls.length, 12); });
+  check("controller boots using login options session and eleven API resources", () => { assert.match(app.root.innerHTML, /功能模块/); assert.equal(app.calls.length, 13); });
   await app.click("open-library");
   check("knowledge module loads from API", () => assert.match(app.root.innerHTML, /data-source-query/));
   await app.click("source", { id: "delivery" });

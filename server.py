@@ -87,7 +87,7 @@ def main():
     parser.add_argument("--origin", default=os.getenv("WORKBENCH_ORIGIN", "http://127.0.0.1:4180"))
     parser.add_argument("--trust-proxy", action="store_true")
     args = parser.parse_args()
-    store = Store(args.database)
+    store = Store(args.database, demo_mode=os.getenv("WORKBENCH_DEMO_LOGIN", "0") == "1")
     if not store.users():
         raise SystemExit("Database not initialized. Run setup_app.py first; no default password exists.")
     app = Application(store, args.origin)

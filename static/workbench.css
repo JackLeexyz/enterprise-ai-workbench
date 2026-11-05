@@ -15,6 +15,19 @@
 .login-form { max-width: 400px; margin: 80px auto 0; padding: 32px; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
 .login-form h1 { font-size: 24px; }
 .login-caption { margin: 6px 0 30px; font-size: 13px; color: var(--muted); }
+.login-accounts { border: 0; padding: 0; margin: 0 0 24px; min-width: 0; }
+.login-accounts legend { font-size: 13px; margin-bottom: 10px; }
+.login-account-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.login-account { position: relative; cursor: pointer; min-width: 0; }
+.login-account + .login-account { border-left: 1px solid var(--line); }
+.login-account input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.login-account > span { min-height: 92px; padding: 12px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+.login-account strong { font-size: 12px; font-weight: 500; }
+.login-account small { font-size: 11px; }
+.login-account input:checked + span { color: var(--blue); background: var(--blue-soft); }
+.login-account input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: -3px; }
+.login-remember { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; font-size: 13px; }
+.login-remember input { width: 16px; height: 16px; accent-color: var(--blue); }
 .login-submit { width: 100%; justify-content: space-between; margin: 2px 0 24px; }
 .password-field { display: flex; align-items: center; border: 1px solid #d7dde6; border-radius: 4px; min-width: 0; }
 .password-field input { border: 0; background: transparent; flex: 1; min-width: 0; padding: 10px 11px; width: 100%; }

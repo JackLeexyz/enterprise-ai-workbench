@@ -7,7 +7,7 @@
   const root = document.getElementById("app");
   const dialog = document.getElementById("workspace-dialog");
   const state = {
-    user: null, sources: [], imports: [], importTargets: {}, importUsage: null, documents: [], reviews: [], tasks: [], messages: [], users: [],
+    user: null, loginOptions: { demo: false, accounts: [] }, loginUsername: "", sources: [], imports: [], importTargets: {}, importUsage: null, documents: [], reviews: [], tasks: [], messages: [], users: [],
     activeModule: null, page: "home", documentTab: "all", sourceQuery: "", sourceFilter: "all",
     editor: null, dirty: false, saving: false, conflict: false, historyMode: false, autosave: null, recovery: null,
     editorPanel: "body", undo: [], baseline: "", currentRevision: 0, newTemplate: "solution",
@@ -521,7 +521,7 @@
     if (name === "open-admin") return admin();
     if (name === "close-dialog") { autosaver.pause(false); pendingNavigation = null; return closeDialog(); }
     if (name === "confirm-navigation") { const next = pendingNavigation; pendingNavigation = null; await autosaver.settled(); autosaver.reset(null); closeDialog(); state.dirty = false; return next?.(); }
-    if (name === "account") return modal("当前账号", `<dl class="task-details"><dt>姓名</dt><dd>${esc(state.user.name)}</dd><dt>账号</dt><dd>${esc(state.user.username)}</dd><dt>角色</dt><dd>${state.user.role === "admin" ? "管理员" : "员工"}</dd></dl>`, button("关闭", "x", "close-dialog") + button("退出登录", "log-out", "logout"));
+    if (name === "account") return modal("当前账号", `<dl class="task-details"><dt>姓名</dt><dd>${esc(state.user.name)}</dd><dt>账号</dt><dd>${esc(state.user.username)}</dd><dt>角色</dt><dd>${state.user.role === "admin" ? "管理员" : "员工"}</dd></dl>`, button("关闭", "x", "close-dialog") + (state.user.role === "admin" ? button("修改密码", "key-round", "reset-account-password", false, `data-id="${esc(state.user.id)}"`) : "") + button("退出登录", "log-out", "logout"));
     if (name === "logout") { closeDialog(); return navigate(async () => { await api("/session/logout", {}); location.reload(); }); }
     if (name === "leave-managed-login") { dialog.dataset.locked = "false"; closeDialog(); leaveManagedSession(); return toast("已返回登录，本页未保存修改已放弃。"); }
     if (name === "toggle-password") { const input = element.parentElement.querySelector("input"); input.type = input.type === "password" ? "text" : "password"; return; }
@@ -751,7 +751,7 @@
     const type = form.dataset.form;
     const intent = () => ({ key: form.dataset.intentKey || (form.dataset.intentKey = crypto.randomUUID()) });
     if (type === "login" || type === "reauth") {
-      const user = await api("/session", { username: data.get("username"), password: data.get("password") }, { login: true });
+      const user = await api("/session", { username: data.get("username"), password: data.get("password"), remember: type === "login" && data.get("remember") === "on" }, { login: true });
       if (type === "reauth") {
         if (user.id !== state.user.id) throw new Error("请使用原账号登录。");
         state.user = user; dialog.dataset.locked = "false"; closeDialog();
@@ -770,7 +770,8 @@
       const payload = type === "account-password" ? { base_version: Number(form.dataset.version) } : { name: data.get("name"), role: data.get("role") };
       if (secret) {
         if (data.get("password") !== data.get("password_confirm")) throw new Error("两次输入的新密码不一致。");
-        if (typeof data.get("password") !== "string" || data.get("password").length < 20 || data.get("password").length > 200) throw new Error("新密码需为 20 至 200 字符。");
+        const minimum = state.loginOptions.demo === true ? 8 : 20;
+        if (typeof data.get("password") !== "string" || data.get("password").length < minimum || data.get("password").length > 200) throw new Error(`新密码需为 ${minimum} 至 200 字符。`);
         payload.password = data.get("password");
       }
       if (type === "account-edit") {
@@ -950,15 +951,22 @@
     const buttons = [...document.querySelectorAll("button")].filter(button => button.form === form);
     buttons.forEach(button => { button.disabled = true; });
     const run = form.matches("[data-home-search]") ? (async () => { state.sourceQuery = new FormData(form).get("query").trim(); await page("module", "library"); })() : submit(form);
+    const loginInputs = form.dataset.form === "login" ? [...form.querySelectorAll("input")] : [];
+    loginInputs.forEach(input => { input.disabled = true; });
     Promise.resolve(run).catch(error => {
       const field = form.querySelector("[data-login-error]");
       if (field) field.textContent = error.message;
       if (dialog.open) dialogError(error);
       toast(error.message);
-    }).finally(() => { delete form.dataset.busy; buttons.forEach(button => { button.disabled = false; }); });
+    }).finally(() => { delete form.dataset.busy; buttons.forEach(button => { button.disabled = false; }); loginInputs.forEach(input => { input.disabled = false; }); });
   });
   document.addEventListener("input", event => {
     const target = event.target;
+    if (target.name === "username" && target.form?.dataset.form === "login") {
+      state.loginUsername = target.value;
+      target.form.querySelectorAll("[data-login-account]").forEach(input => { input.checked = input.value === target.value; });
+      return;
+    }
     if (target.matches("[data-chat-input]")) { chatDraft().text = target.value; return; }
     if (target.form?.matches?.('[data-form="source-version"],[data-form="source-sharing"],[data-form="artifact-sharing"],[data-form="import-confirm"]')) delete target.form.dataset.intentKey;
     if (target.form?.matches('[data-form="account-edit"],[data-form="account-password"],[data-form="category-edit"]')) delete target.form.dataset.intentKey;
@@ -974,6 +982,17 @@
   });
   document.addEventListener("change", event => {
     const target = event.target;
+    if (target.matches("[data-login-account]")) {
+      const form = target.form;
+      if (!state.loginOptions.accounts.some(item => item.username === target.value) || !form || form.dataset.busy) return;
+      state.loginUsername = target.value;
+      form.elements.namedItem("username").value = target.value;
+      form.elements.namedItem("password").value = "";
+      const error = form.querySelector("[data-login-error]");
+      if (error) error.textContent = "";
+      form.elements.namedItem("password").focus();
+      return;
+    }
     if (target.matches("[data-chat-scope]")) { chatDraft().scope = target.value; return; }
     if (target.form?.matches?.('[data-form="source-version"],[data-form="source-sharing"],[data-form="artifact-sharing"],[data-form="import-confirm"]')) delete target.form.dataset.intentKey;
     if (target.matches("[data-artifact-scope]")) {
@@ -1027,6 +1046,8 @@
   dialog.addEventListener("cancel", event => { event.preventDefault(); autosaver.pause(false); pendingNavigation = null; closeDialog(); });
   window.addEventListener("beforeunload", event => { if (state.saving || state.dirty && !autosaver.safe()) { event.preventDefault(); event.returnValue = ""; } });
   async function boot() {
+    try { state.loginOptions = await api("/login-options"); }
+    catch { state.loginOptions = { demo: false, accounts: [] }; }
     try { state.user = await api("/session"); await records(); render(); }
     catch (error) {
       if (error.status === 401) { state.user = null; render(); }

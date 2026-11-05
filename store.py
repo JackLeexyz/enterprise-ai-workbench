@@ -11,7 +11,7 @@ import sqlite3
 import time
 import uuid
 
-from auth import check_password, password_hash, token_hash
+from auth import REMEMBER_SECONDS, SESSION_SECONDS, check_password, password_hash, token_hash
 import writing
 import rich_content
 
@@ -65,7 +65,9 @@ def version(value):
 
 
 class Store:
-    def __init__(self, path):
+    def __init__(self, path, demo_mode=False):
+        self.demo_mode = demo_mode is True
+        self.password_min_length = 8 if self.demo_mode else 20
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:
@@ -204,10 +206,10 @@ class Store:
             self.require_admin(db, user)
             return [self.account_view(row) for row in db.execute("SELECT u.id,u.username,u.name,u.role,u.enabled,v.version,v.updated_at FROM users u JOIN account_versions v ON v.user_id=u.id ORDER BY u.enabled DESC,u.username")]
 
-    @staticmethod
-    def account_password(value):
-        if not isinstance(value, str) or not 20 <= len(value) <= 200 or not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
-            fail(422, "INVALID_ACCOUNT", "新密码需为 20 至 200 字符，不能包含控制字符。")
+    def account_password(self, value):
+        minimum = self.password_min_length
+        if not isinstance(value, str) or not minimum <= len(value) <= 200 or not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            fail(422, "INVALID_ACCOUNT", f"新密码需为 {minimum} 至 200 字符，不能包含控制字符。")
         return value
 
     def credential_once(self, db, user, route, key, payload, password, operation):
@@ -360,7 +362,9 @@ class Store:
             category = db.execute("SELECT * FROM categories WHERE id=?", (cid,)).fetchone()
         return category
 
-    def login(self, username, password):
+    def login(self, username, password, remember=False):
+        if type(remember) is not bool:
+            fail(422, "INVALID_INPUT", "请检查记住设备选项。")
         text(username, "用户名", 40)
         text(password, "密码", 200)
         with self.connection(write=True) as db:
@@ -373,7 +377,8 @@ class Store:
                 fail(401, "LOGIN_FAILED", "用户名或密码错误。")
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
             db.execute("DELETE FROM sessions WHERE expires<?", (time.time(),))
-            db.execute("INSERT INTO sessions VALUES(?,?,?,?)", (token_hash(token), row["id"], csrf, time.time() + 8 * 3600))
+            lifetime = REMEMBER_SECONDS if self.demo_mode and remember else SESSION_SECONDS
+            db.execute("INSERT INTO sessions VALUES(?,?,?,?)", (token_hash(token), row["id"], csrf, time.time() + lifetime))
             return token, {"id": row["id"], "username": row["username"], "name": row["name"], "role": row["role"], "csrf": csrf}
 
     def session(self, token):

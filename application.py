@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 import uuid
 
 from store import Problem, fail
+from auth import REMEMBER_SECONDS, SESSION_SECONDS
 from document_import import ImportProblem, MAX_UPLOAD_BYTES, read_multipart
 
 
@@ -38,8 +39,17 @@ class Application:
         self.attempts = defaultdict(deque)
         self.lock = threading.Lock()
 
-    def cookie(self, token, clear=False):
-        return f"{self.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={0 if clear else 28800}" + ("; Secure" if self.secure else "")
+    def cookie(self, token, clear=False, remember=False):
+        lifetime = REMEMBER_SECONDS if self.store.demo_mode and remember else SESSION_SECONDS
+        return f"{self.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={0 if clear else lifetime}" + ("; Secure" if self.secure else "")
+
+    def login_options(self):
+        choices = [("writer", "写作员工", "employee"), ("reviewer", "审核同事", "employee"), ("admin", "管理员", "admin")]
+        users = {item["username"]: item for item in self.store.users()} if self.store.demo_mode else {}
+        return {"demo": self.store.demo_mode, "password_min_length": self.store.password_min_length,
+                "remember_seconds": REMEMBER_SECONDS if self.store.demo_mode else SESSION_SECONDS,
+                "accounts": [{"username": name, "label": label} for name, label, role in choices
+                             if name in users and users[name]["id"] == "u_" + name and users[name]["role"] == role]}
 
     @staticmethod
     def request_limit(method, target):
@@ -73,7 +83,9 @@ class Application:
             if method == "GET" and not path.startswith("/api/"):
                 response = self.asset(path)
             elif method == "GET" and path == "/api/workbench/health":
-                response = self.json_response({"status": "ok", "mode": "offline_keyword", "version": "0.11.0"}, request_id=request_id)
+                response = self.json_response({"status": "ok", "mode": "offline_keyword", "version": "0.11.1"}, request_id=request_id)
+            elif method == "GET" and path == "/api/workbench/login-options":
+                response = self.json_response(self.login_options(), request_id=request_id)
             else:
                 if not path.startswith("/api/workbench/"):
                     fail(404, "NOT_FOUND", "页面或接口不存在。")
@@ -95,8 +107,9 @@ class Application:
                             fail(400, "INVALID_JSON", "请求内容必须是对象。")
                 if path == "/api/workbench/session" and method == "POST":
                     self.login_limit(address)
-                    token, user = self.store.login(body.get("username"), body.get("password"))
-                    response = self.json_response(user, headers={"Set-Cookie": self.cookie(token)}, request_id=request_id)
+                    remember = body.get("remember", False)
+                    token, user = self.store.login(body.get("username"), body.get("password"), remember)
+                    response = self.json_response(user, headers={"Set-Cookie": self.cookie(token, remember=remember)}, request_id=request_id)
                 else:
                     cookie = SimpleCookie()
                     try:
