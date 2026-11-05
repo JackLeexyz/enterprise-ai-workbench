@@ -67,7 +67,7 @@ def version(value):
 class Store:
     def __init__(self, path, demo_mode=False):
         self.demo_mode = demo_mode is True
-        self.password_min_length = 8 if self.demo_mode else 20
+        self.password_min_length = 6 if self.demo_mode else 20
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:

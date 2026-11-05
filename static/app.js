@@ -770,7 +770,7 @@
       const payload = type === "account-password" ? { base_version: Number(form.dataset.version) } : { name: data.get("name"), role: data.get("role") };
       if (secret) {
         if (data.get("password") !== data.get("password_confirm")) throw new Error("两次输入的新密码不一致。");
-        const minimum = state.loginOptions.demo === true ? 8 : 20;
+        const minimum = state.loginOptions.demo === true ? 6 : 20;
         if (typeof data.get("password") !== "string" || data.get("password").length < minimum || data.get("password").length > 200) throw new Error(`新密码需为 ${minimum} 至 200 字符。`);
         payload.password = data.get("password");
       }

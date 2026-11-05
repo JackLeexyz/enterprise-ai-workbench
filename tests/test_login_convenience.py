@@ -66,7 +66,7 @@ class LoginConvenienceTests(unittest.TestCase):
         response, result = self.request("GET", "/login-options")
         self.assertEqual(response.status, 200)
         self.assertEqual([item["username"] for item in result["data"]["accounts"]], ["writer", "reviewer", "admin"])
-        self.assertEqual(result["data"]["password_min_length"], 8)
+        self.assertEqual(result["data"]["password_min_length"], 6)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         for password in self.passwords.values():
             self.assertNotIn(password, response.body.decode())
@@ -139,10 +139,10 @@ class LoginConvenienceTests(unittest.TestCase):
         self.assertIn("Max-Age=0", response.headers["Set-Cookie"])
         self.assertEqual(self.request("GET", "/session", token=token)[0].status, 401)
 
-    def test_demo_password_reset_allows_eight_chars_and_revokes_all_sessions(self):
+    def test_demo_password_reset_allows_six_chars_and_revokes_all_sessions(self):
         token, _, _ = self.login(True)
         second = self.store.login("writer", self.passwords["writer"], True)[0]
-        new_password = secrets.token_hex(4)
+        new_password = secrets.token_hex(3)
         account = next(item for item in self.store.admin_users(self.admin) if item["username"] == "writer")
         result = self.store.reset_user_password(self.admin, account["id"], {"base_version": account["version"], "password": new_password}, secrets.token_hex(16))
         self.assertNotIn(new_password, json.dumps(result))
@@ -154,7 +154,7 @@ class LoginConvenienceTests(unittest.TestCase):
             self.assertNotEqual(db.execute("SELECT password_hash FROM users WHERE username='writer'").fetchone()[0], new_password)
 
     def test_demo_still_rejects_too_short_blank_and_control_char_passwords(self):
-        for password in ["admin", "LHP", "short77", " " * 8, "abcd\nefgh", "abcd\x7fefgh"]:
+        for password in ["short", "abc", " " * 6, "abcd\nefgh", "abcd\x7fefgh"]:
             with self.subTest(password=repr(password)), self.assertRaises(Problem):
                 self.store.account_password(password)
 
@@ -162,7 +162,7 @@ class LoginConvenienceTests(unittest.TestCase):
         self.store = Store(self.database)
         self.app = Application(self.store)
         token, user, _ = self.login(name="admin")
-        response, result = self.request("POST", "/admin/users", {"username": "new_test", "name": "测试", "role": "employee", "password": secrets.token_hex(4), "demo_mode": True, "password_min_length": 8}, token, user["csrf"])
+        response, result = self.request("POST", "/admin/users", {"username": "new_test", "name": "测试", "role": "employee", "password": secrets.token_hex(3), "demo_mode": True, "password_min_length": 6}, token, user["csrf"])
         self.assertEqual(response.status, 422)
         self.assertEqual(result["error"]["code"], "INVALID_ACCOUNT")
 
@@ -179,6 +179,31 @@ class LoginConvenienceTests(unittest.TestCase):
         item = next(user for user in self.store.admin_users(self.admin) if user["username"] == "writer")
         self.store.update_user(self.admin, item["id"], {"base_version": item["version"], "name": item["name"], "role": item["role"], "active": False}, secrets.token_hex(16))
         self.assertEqual(self.request("GET", "/session", token=token)[0].status, 401)
+
+    def test_three_demo_accounts_can_share_a_user_chosen_password_without_changing_roles(self):
+        sessions = {name: self.login(True, name) for name in ("writer", "reviewer", "admin")}
+        token, admin, _ = sessions["admin"]
+        before = {item["username"]: item for item in self.store.admin_users(self.admin)}
+        new_password = secrets.token_hex(3)
+        for name in ("writer", "reviewer", "admin"):
+            item = before[name]
+            response, result = self.request("POST", f"/admin/users/{item['id']}/password",
+                                            {"base_version": item["version"], "password": new_password}, token, admin["csrf"])
+            self.assertEqual(response.status, 200)
+            self.assertNotIn(new_password, json.dumps(result))
+            self.assertEqual(self.request("GET", "/session", token=sessions[name][0])[0].status, 401)
+            response, result = self.request("POST", "/session", {"username": name, "password": new_password})
+            self.assertEqual(response.status, 200)
+            self.assertEqual(result["data"]["id"], item["id"])
+            self.assertEqual(result["data"]["role"], item["role"])
+            response, _ = self.request("POST", "/session", {"username": name, "password": self.passwords[name]})
+            self.assertEqual(response.status, 401)
+        after = {item["username"]: item for item in self.store.admin_users(self.admin)}
+        self.assertEqual(set(before), set(after))
+        for name, item in before.items():
+            for field in ("id", "username", "name", "role", "active"):
+                self.assertEqual(after[name][field], item[field])
+            self.assertEqual(after[name]["version"], item["version"] + 1)
 
 
 if __name__ == "__main__":

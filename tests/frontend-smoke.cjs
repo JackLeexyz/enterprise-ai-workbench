@@ -68,9 +68,9 @@ check("demo login offers fixed role choices and an optional remembered session w
   assert.doesNotMatch(html, /name="password"[^>]*value=/);
   assert.doesNotMatch(context.WORKBENCH_VIEWS.login(ui()), /data-login-account|name="remember"/);
 });
-check("demo account password controls use eight characters while normal controls remain strict", () => {
+check("demo account password controls use six characters while normal controls remain strict", () => {
   const demo = { ...ui(), state: { ...state, loginOptions: { demo: true } } };
-  assert.match(context.WORKBENCH_MANAGEMENT_VIEWS.accountForm(demo), /minlength="8"/);
+  assert.match(context.WORKBENCH_MANAGEMENT_VIEWS.accountForm(demo), /minlength="6"/);
   assert.match(context.WORKBENCH_MANAGEMENT_VIEWS.accountForm(ui()), /minlength="20"/);
 });
 check("file preview escapes metadata warnings and markdown rather than rendering HTML", () => {
@@ -666,8 +666,8 @@ async function controllerChecks() {
   check("remembered login sends an explicit boolean without a credential idempotency cache", () => { const call = loginApp.calls.find(item => item.endpoint === "/session" && item.body); assert.equal(call.body.remember, true); });
   await loginApp.submit("login", { username: "writer", password: "test-only-value" });
   check("unchecked remembered login is explicitly false", () => { const call = loginApp.calls.filter(item => item.endpoint === "/session" && item.body).at(-1); assert.equal(call.body.remember, false); });
-  const short = await loginApp.submit("account-edit", { username: "demo.test", name: "测试", role: "employee", password: "8letters", password_confirm: "8letters" });
-  check("demo controller permits eight-character test passwords through the sensitive account endpoint", () => { assert.equal(loginApp.calls.filter(item => item.endpoint === "/admin/users" && item.body).length, 1); });
+  const short = await loginApp.submit("account-edit", { username: "demo.test", name: "测试", role: "employee", password: "sample", password_confirm: "sample" });
+  check("demo controller permits six-character test passwords through the sensitive account endpoint", () => { assert.equal(loginApp.calls.filter(item => item.endpoint === "/admin/users" && item.body).length, 1); });
   await conversationControllerChecks();
   const readRaceApp = runtime(); await readRaceApp.flush(); readRaceApp.advanceBeforeDraftRead(); await readRaceApp.click("document", { id: "proposal" });
   check("document and draft revision read race pauses editing rather than mixing snapshots", () => { assert.match(readRaceApp.toast.textContent, /正式修订在读取时发生变化/); assert.match(readRaceApp.root.innerHTML, /本页编辑尚未覆盖/); assert.equal(readRaceApp.calls.filter(item => item.method === "POST" && item.endpoint.endsWith("/draft")).length, 0); });

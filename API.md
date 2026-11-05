@@ -1,6 +1,6 @@
 # 文库导入与智能协作 API 契约
 
-本文件描述本批已实现接口。软件修订 0.11.1；完整富文本编辑器、完整工单与完整V1.0.0尚未完成，项目根V1_ACCEPTANCE.md保留全部差距。前缀 `/api/workbench`，写入用 POST 或下表指定的 PATCH；除文件上传使用 multipart 外，均用 JSON。每次返回 `X-Request-Id`；普通成功为 `{data,request_id}`，错误为 `{error:{code,message},request_id}`。
+本文件描述本批已实现接口。软件修订 0.11.2；完整富文本编辑器、完整工单与完整V1.0.0尚未完成，项目根V1_ACCEPTANCE.md保留全部差距。前缀 `/api/workbench`，写入用 POST 或下表指定的 PATCH；除文件上传使用 multipart 外，均用 JSON。每次返回 `X-Request-Id`；普通成功为 `{data,request_id}`，错误为 `{error:{code,message},request_id}`。
 
 ## 会话与安全
 
@@ -235,7 +235,7 @@ feedback后台返回id/rating/reason/answer_type/status/resolution/version/creat
 | POST | `/admin/categories` | name≤30；创建启用分类，稳定新ID |
 | PATCH | `/admin/categories/:id` | base_version,name?,active?；改名/启停，不硬删，不接受分类树 |
 
-账号名为3–40位小写字母开头、字母数字或`._-`；姓名1–60字；新密码默认20–200字符，服务器明确启用演示配置时8–200字符，非全空白、不含控制字符。浏览器用两次密码输入校对，密码不置入HTML值、URL、localStorage或通用请求缓存键。账号版本独立于文档版本，任何管理修改/重置递增；旧base_version返回409 VERSION_CONFLICT。无变化422 NO_CHANGES；非法输入422 INVALID_ACCOUNT；重名409 ACCOUNT_EXISTS。
+账号名为3–40位小写字母开头、字母数字或`._-`；姓名1–60字；新密码默认20–200字符，服务器明确启用演示配置时6–200字符，非全空白、不含控制字符。浏览器用两次密码输入校对，密码不置入HTML值、URL、localStorage或通用请求缓存键。账号版本独立于文档版本，任何管理修改/重置递增；旧base_version返回409 VERSION_CONFLICT。无变化422 NO_CHANGES；非法输入422 INVALID_ACCOUNT；重名409 ACCOUNT_EXISTS。
 
 创建/重置密码的幂等请求将非秘密参数按通用规则绑定；口令另用带随机盐的PBKDF2摘要验证重放内容，不保存明文或快速密码指纹，不在成功/错误响应、审计事件、幂等结果中回传哈希。不同密码复用同key返回409 IDEMPOTENCY_MISMATCH。凭据摘要仅在受保护数据库的credential_intents中，不是运营日志。密码由管理员通过独立安全渠道交付，本功能不发邮件/消息、不生成公开重置链接。初始化口令文件不会随后台重置更新；公网交付必须先完成HTTPS，不能将受限环境的内存HTTP解析测试当作网络/TLS验证。
 

@@ -83,7 +83,7 @@ class Application:
             if method == "GET" and not path.startswith("/api/"):
                 response = self.asset(path)
             elif method == "GET" and path == "/api/workbench/health":
-                response = self.json_response({"status": "ok", "mode": "offline_keyword", "version": "0.11.1"}, request_id=request_id)
+                response = self.json_response({"status": "ok", "mode": "offline_keyword", "version": "0.11.2"}, request_id=request_id)
             elif method == "GET" and path == "/api/workbench/login-options":
                 response = self.json_response(self.login_options(), request_id=request_id)
             else:
