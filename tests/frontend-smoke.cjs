@@ -251,6 +251,35 @@ check("rich replacement preview discloses target style reset", () => {
   const html = context.WORKBENCH_WRITING_VIEWS.suggestionPreview(ui(), { base_revision: 2, target_format_reset: true, operation: "replace", target_text: "格式段落", excerpt: "新摘录", source: { title: "虚构资料", label: "v1", locator: "第1节" } });
   assert.match(html, /清除目标段落的行内样式与链接/);
 });
+check("AI consent is an unchecked required checkbox and has no secret input", () => {
+  const html = context.WORKBENCH_VIEWS.aiConsent(ui(), "answer");
+  assert.match(html, /name="consent" required/);
+  assert.doesNotMatch(html, /checked|type="password"|name="key"/);
+  assert.match(html, /发送至 DeepSeek/);
+});
+check("model answer is escaped and keeps citation numbers and reported usage separate", () => {
+  const item = { ai: { state: "succeeded", model: "deepseek-flash", output: { text: '<img src=x onerror="x">', citations: [1], insufficient: false }, usage: { total_tokens: 130 } } };
+  const html = context.WORKBENCH_VIEWS.aiAnswer(ui(), item);
+  assert.match(html, /&lt;img/);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /引用 \[1\]/);
+  assert.match(html, /130 Token/);
+});
+check("failed AI keeps offline fallback and does not offer automatic regeneration", () => {
+  const html = context.WORKBENCH_VIEWS.aiAnswer(ui(), { ai: { state: "failed" } });
+  assert.match(html, /不会自动重试/);
+  assert.doesNotMatch(html, /data-action="ai-answer"/);
+});
+check("AI writing preview shows generated content only when sufficient", () => {
+  const item = { base_revision: 1, operation: "replace", target_text: "old", excerpt: "原摘录", source: { title: "虚构资料", label: "v1", locator: "第1节" }, ai: { state: "succeeded", output: { text: "模型建议", insufficient: false } } };
+  const html = context.WORKBENCH_WRITING_VIEWS.suggestionPreview(ui(), item);
+  assert.match(html, /模型建议/);
+  assert.match(html, /AI 写作建议 \/ 待核实/);
+  item.ai.output.insufficient = true;
+  const insufficient = context.WORKBENCH_WRITING_VIEWS.suggestionPreview(ui(), item);
+  assert.match(insufficient, /原摘录/);
+  assert.doesNotMatch(insufficient, /<p class="ai-generated-text">模型建议/);
+});
 check("evidence preview renders exact section and escapes all source content", () => {
   const html = context.WORKBENCH_VIEWS.evidenceDetail(ui(), { category: "通用资料", label: "v1", locator: "第 2 节", version_id: "ver_test", section: { title: '<img src=x>', text: '<script>private</script>' } });
   assert.match(html, /data-evidence-target tabindex="-1"/);
@@ -445,6 +474,7 @@ function runtime(user = users[0], loginOptions = { demo: false, accounts: [], pa
     let result = {}, error;
     if (endpoint.endsWith("/revisions") && failNetwork) { failNetwork = false; throw new Error("offline"); }
     if (endpoint === "/login-options") result = loginOptions;
+    else if (endpoint === "/ai/status") result = { ready: false, mode: "offline_keyword" };
     else if (endpoint === "/session") result = { ...user, csrf: "mock-csrf" };
     else if (endpoint === "/sources") {
       const category = body?.category_id ? database.categories.find(item => item.id === body.category_id && item.active) : database.categories[0];
@@ -764,7 +794,7 @@ async function controllerChecks() {
   await versionApp.submit("import-confirm", { parent_source_id: "weekly_v2", title: "虚构 PDF 新版", category_id: "cat_other", label: "v3" }, { id: versionJob.id, targetVersion: "3" });
   check("file confirmation sends parsed import id and optimistic family version", () => { const call = versionApp.calls.filter(call => call.endpoint === "/sources/weekly_v2/versions").at(-1); assert.equal(call.body.import_id, versionJob.id); assert.equal(call.body.base_version, 3); assert.equal(versionJob.status, "committed"); assert.equal(versionApp.database.sources.at(-1).sections[0].page_number, 1); });
   const app = runtime(); await app.flush();
-  check("controller boots using login options session and eleven API resources", () => { assert.match(app.root.innerHTML, /功能模块/); assert.equal(app.calls.length, 13); });
+  check("controller boots using login options session and twelve API resources", () => { assert.match(app.root.innerHTML, /功能模块/); assert.equal(app.calls.length, 14); });
   await app.click("open-library");
   check("knowledge module loads from API", () => assert.match(app.root.innerHTML, /data-source-query/));
   await app.click("source", { id: "delivery" });
@@ -839,7 +869,7 @@ async function controllerChecks() {
   await adminApp.submit("feedback-triage", { status: "closed", resolution: "" }, { id: "f_admin", version: "1" });
   check("closing feedback requires resolution before sending", () => { assert.equal(adminApp.calls.length, beforeTriage); assert.match(adminApp.toast.textContent, /请填写处理备注/); });
   await adminApp.submit("feedback-triage", { status: "closed", resolution: "已归档复现条件" }, { id: "f_admin", version: "1" });
-  check("admin triage writes optimistic version and re-reads status", () => { const call = adminApp.calls.find(item => item.endpoint.endsWith("/status")); assert.equal(call.body.base_version, 1); assert.equal(adminApp.database.feedback[0].status, "closed"); assert.match(adminApp.toast.textContent, /已保存/); });
+  check("admin triage writes optimistic version and re-reads status", () => { const call = adminApp.calls.find(item => item.body && item.endpoint.endsWith("/status")); assert.equal(call.body.base_version, 1); assert.equal(adminApp.database.feedback[0].status, "closed"); assert.match(adminApp.toast.textContent, /已保存/); });
   await app.click("open-documents"); await app.click("new-document");
   const formIntent = {};
   app.setFailRecords(); await app.submit("document", { title: "新建方案", template: "solution", notes: "需求已确认", source_ids: ["product"] }, formIntent);

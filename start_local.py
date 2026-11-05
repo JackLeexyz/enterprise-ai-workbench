@@ -1,27 +1,30 @@
 import errno
 import json
+import os
 from pathlib import Path
 import webbrowser
 
 from application import Application
 from server import Server
 from store import Store
+from ai_service import AIService
+from llm_provider import ModelSettings
 
 
 def main():
     root = Path(__file__).parent
-    store = Store(root / "data/workbench.db")
+    store = Store(root / "data/workbench.db", demo_mode=os.getenv("WORKBENCH_DEMO_LOGIN", "0") == "1")
     if not store.users():
         raise SystemExit("请先运行 setup_app.py 初始化独立演示库。")
     for port in range(4180, 4191):
         origin = f"http://127.0.0.1:{port}"
         try:
-            server = Server(("127.0.0.1", port), Application(store, origin))
+            server = Server(("127.0.0.1", port), Application(store, origin, ai=AIService(store, ModelSettings.from_environment())))
         except OSError as error:
             if error.errno == errno.EADDRINUSE:
                 continue
             raise SystemExit("环境未允许监听本机端口，服务没有启动。请在具有本地网络权限的终端运行。") from error
-        print(json.dumps({"status": "listening", "url": origin, "mode": "offline_keyword"}), flush=True)
+        print(json.dumps({"status": "listening", "url": origin, "mode": server.app.ai.status()["mode"]}), flush=True)
         print("登录信息仅保存在本机私有文件：", root / "private/登录信息.json", flush=True)
         webbrowser.open(origin)
         try:

@@ -177,3 +177,15 @@ CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL, action TEXT NOT NULL,
   object_id TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_requests (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+  feature TEXT NOT NULL CHECK(feature IN ('answer','writing')), target_id TEXT NOT NULL,
+  context_hash TEXT NOT NULL, operation_key TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('pending','succeeded','failed')),
+  model TEXT NOT NULL, error_code TEXT NOT NULL DEFAULT '', output_json TEXT,
+  reserved_tokens INTEGER NOT NULL, accounted_tokens INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
+  created_at REAL NOT NULL, completed_at REAL,
+  UNIQUE(user_id,operation_key), UNIQUE(user_id,feature,target_id,context_hash)
+);
+CREATE INDEX IF NOT EXISTS ai_requests_by_day ON ai_requests(created_at);

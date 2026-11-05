@@ -10,6 +10,8 @@ from pathlib import Path
 from application import Application
 from store import Store
 from ingestion_worker import IngestionWorker
+from ai_service import AIService
+from llm_provider import ModelSettings
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -90,9 +92,9 @@ def main():
     store = Store(args.database, demo_mode=os.getenv("WORKBENCH_DEMO_LOGIN", "0") == "1")
     if not store.users():
         raise SystemExit("Database not initialized. Run setup_app.py first; no default password exists.")
-    app = Application(store, args.origin)
+    app = Application(store, args.origin, ai=AIService(store, ModelSettings.from_environment()))
     with Server((args.bind, args.port), app, args.trust_proxy) as server:
-        print(json.dumps({"status": "listening", "origin": app.origin, "bind": f"{args.bind}:{args.port}", "mode": "offline_keyword"}), flush=True)
+        print(json.dumps({"status": "listening", "origin": app.origin, "bind": f"{args.bind}:{args.port}", "mode": app.ai.status()["mode"]}), flush=True)
         server.serve_forever()
 
 

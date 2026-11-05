@@ -1226,7 +1226,8 @@ class Store:
             if not target or fingerprint(target) != row["target_hash"]:
                 fail(409, "SUGGESTION_CHANGED", "目标段落已变化，请重新预览。")
             source, section, ref = self.suggestion_source(db, user, row)
-            return {"id": sid, "artifact_id": aid, "status": "prepared", "base_revision": row["base_revision"], "target_block_id": row["target_block_id"], "target_hash": row["target_hash"], "target_text": target["text"], "target_format_reset": json.loads(revision[0]).get("schema_version") == 2 and row["operation"] == "replace", "operation": row["operation"], "source_fingerprint": ref["section_hash"], "source": {"source_id": source["id"], "version_id": source["version_id"], "title": source["title"], "label": source["label"], "locator": source_locator(section, ref["section_index"])}, "excerpt": section["text"][:1200], "expires_at": datetime.fromtimestamp(row["expires"], timezone.utc).isoformat(), "mode": "offline_excerpt"}
+            ai = self.ai_result(db, user, "writing", sid, self.suggestion_ai_binding(row))
+            return {"id": sid, "artifact_id": aid, "status": "prepared", "base_revision": row["base_revision"], "target_block_id": row["target_block_id"], "target_hash": row["target_hash"], "target_text": target["text"], "target_format_reset": json.loads(revision[0]).get("schema_version") == 2 and row["operation"] == "replace", "operation": row["operation"], "source_fingerprint": ref["section_hash"], "source": {"source_id": source["id"], "version_id": source["version_id"], "title": source["title"], "label": source["label"], "locator": source_locator(section, ref["section_index"])}, "excerpt": section["text"][:1200], "expires_at": datetime.fromtimestamp(row["expires"], timezone.utc).isoformat(), "mode": "offline_excerpt", "ai": ai}
 
     def apply_suggestion(self, user, aid, sid, payload, key):
         base = version(payload.get("base_revision"))
@@ -1250,6 +1251,14 @@ class Store:
                 refs = self.references(db, user, candidate_refs)
                 number = next(index for index, ref in enumerate(refs, 1) if ref["source_id"] == source["id"])
                 quote = section["text"][:1200] + f" [{number}]"
+                if payload.get("generation_id") is not None:
+                    ai = self.ai_result(db, user, "writing", sid, self.suggestion_ai_binding(row))
+                    if not ai or ai["id"] != payload["generation_id"] or ai["state"] != "succeeded" or ai["output"]["insufficient"]:
+                        fail(409, "AI_SUGGESTION_UNAVAILABLE", "模型建议不可用，请重新预览；未替换为其他内容。")
+                    quote = ai["output"]["text"]
+                    quote = re.sub(r"\[1\]", f"[{number}]", quote)
+                    if f"[{number}]" not in quote:
+                        quote += f" [{number}]"
                 if row["operation"] == "replace":
                     rich_content.replace_text(target, quote)
                 else:
@@ -1584,11 +1593,37 @@ class Store:
                 matches.append({**evidence, "excerpt": section["text"][:700]})
         feedback = db.execute("SELECT * FROM feedback WHERE message_id=? AND user_id=?", (row["id"], user["id"])).fetchone()
         result = {"id": row["id"], "question": row["question"], "created_at": row["created_at"], "matches": matches, "unavailable_count": len(refs) - len(matches), "answer_type": "cited_excerpts" if matches else "no_evidence", "mode": "offline_keyword", "feedback": self.feedback_view(feedback, own=True) if feedback else None}
+        if matches and len(matches) == len(refs) and not any(item["historical"] for item in matches):
+            ai = self.ai_result(db, user, "answer", row["id"], self.message_ai_binding(row))
+            if ai:
+                result["ai"] = ai
+                if ai["state"] == "succeeded":
+                    result["mode"] = "model_assisted"
+                    result["answer_type"] = "model_insufficient" if ai["output"]["insufficient"] else "model_grounded"
         conversation = db.execute("SELECT * FROM conversation_messages WHERE message_id=?", (row["id"],)).fetchone()
         if conversation:
             kind = "needs_info" if conversation["reply_type"] == "needs_info" else "evidence_excerpt" if matches else "no_evidence"
             result.update(conversation_id=conversation["conversation_id"], sequence=conversation["sequence"], reply_type=kind, clarification_for=conversation["clarification_for"], clarification_prompt=conversation["clarification_prompt"], scope=conversation["scope"])
             if kind == "needs_info": result["answer_type"] = kind
+        return result
+
+    @staticmethod
+    def message_ai_binding(row):
+        return fingerprint([row["id"], row["question"], row["refs_json"]])
+
+    @staticmethod
+    def suggestion_ai_binding(row):
+        return fingerprint([row["artifact_id"], row["base_revision"], row["target_block_id"], row["target_hash"], row["source_ref_json"], row["operation"]])
+
+    @staticmethod
+    def ai_result(db, user, feature, target, binding):
+        row = db.execute("SELECT * FROM ai_requests WHERE user_id=? AND feature=? AND target_id=? AND context_hash=?", (user["id"], feature, target, binding)).fetchone()
+        if not row:
+            return None
+        result = {"id": row["id"], "state": row["state"], "model": row["model"], "error_code": row["error_code"],
+                  "usage": {"input_tokens": row["input_tokens"], "output_tokens": row["output_tokens"], "total_tokens": row["total_tokens"], "accounted_tokens": row["accounted_tokens"], "estimated": row["total_tokens"] is None}}
+        if row["state"] == "succeeded":
+            result["output"] = json.loads(row["output_json"])
         return result
 
     def messages(self, user, message_id=None):

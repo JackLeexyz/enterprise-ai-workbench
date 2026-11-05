@@ -1,6 +1,6 @@
 services:
   setup:
-    image: bolai-workbench:0.11.2
+    image: bolai-workbench:0.12.0
     build: .
     profiles: [setup]
     command: [python, setup_app.py, --database, /data/workbench.db, --credentials-out, /private/login.json]
@@ -12,12 +12,18 @@ services:
       - workbench-data:/data
       - workbench-private:/private
   workbench:
-    image: bolai-workbench:0.11.2
+    image: bolai-workbench:0.12.0
     build: .
     restart: unless-stopped
     environment:
       WORKBENCH_ORIGIN: ${WORKBENCH_ORIGIN:-http://127.0.0.1:4180}
       WORKBENCH_DEMO_LOGIN: ${WORKBENCH_DEMO_LOGIN:-0}
+      WORKBENCH_AI_ENABLED: ${WORKBENCH_AI_ENABLED:-0}
+      WORKBENCH_AI_MODEL: ${WORKBENCH_AI_MODEL:-deepseek-flash}
+      WORKBENCH_AI_KEY_FILE: /data/model-private/deepseek.key
+      WORKBENCH_AI_SOURCE_IDS: ${WORKBENCH_AI_SOURCE_IDS:-product,delivery,faq}
+      WORKBENCH_AI_DAILY_TOKENS: ${WORKBENCH_AI_DAILY_TOKENS:-120000}
+      WORKBENCH_AI_USER_DAILY_TOKENS: ${WORKBENCH_AI_USER_DAILY_TOKENS:-40000}
     ports:
       - 127.0.0.1:4180:4180
     read_only: true

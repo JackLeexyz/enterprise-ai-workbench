@@ -17,13 +17,14 @@
     accountQuery: "", accountFilter: "all", adminUsersError: "", adminCategoriesError: "",
     conversations: [], legacyMessages: [], activeConversation: null, conversation: null,
     nextChatCursor: null, currentChatCursor: null, chatLoading: false, chatError: "",
-    chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false
+    chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false,
+    ai: { ready: false, mode: "offline_keyword" }
   };
   const names = { draft: "草稿", pending: "待审核", approved: "已通过", rejected: "已退回", superseded: "已失效", historical: "历史修订", in_progress: "进行中", completed: "已完成", canceled: "已取消" };
   const keys = new Map();
   let toastTimer, focusBeforeDialog, pendingNavigation, currentSource, pendingPreview, currentPublication, lastInput;
   let importTimer, currentImport, importGeneration = 0;
-  let templateDraft, currentSuggestion;
+  let templateDraft, currentSuggestion, currentAI;
   let chatGeneration = 0, chatEpoch = 0, createChatKey;
   const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const icon = name => `<i data-lucide="${esc(name)}" aria-hidden="true"></i>`;
@@ -102,7 +103,7 @@
     return result.data;
   }
   async function records() {
-    const [sources, docs, reviews, tasks, messages, users, imports, usage, templates, categories, conversations] = await Promise.all(["/sources", "/artifacts", "/reviews", "/tasks", "/messages", "/users", "/imports", "/imports/usage", "/templates", "/categories", "/conversations"].map(path => api(path)));
+    const [sources, docs, reviews, tasks, messages, users, imports, usage, templates, categories, conversations, ai] = await Promise.all(["/sources", "/artifacts", "/reviews", "/tasks", "/messages", "/users", "/imports", "/imports/usage", "/templates", "/categories", "/conversations", "/ai/status"].map(path => api(path)));
     state.sources = sources.map(item => ({ ...item, status: V.publication[item.publication] }));
     state.documents = docs.map(item => ({ ...item, state: label(item.status), version: "r" + item.revision, updated: formatDate(item.updated_at) }));
     state.reviews = reviews;
@@ -115,6 +116,7 @@
     state.importUsage = usage;
     state.templates = templates;
     state.categories = categories;
+    state.ai = ai;
   }
   function stopImportPoll() { clearTimeout(importTimer); currentImport = null; importGeneration++; }
   function modal(title, body, footer = "", options = {}) {
@@ -133,6 +135,7 @@
     currentSource = null;
     currentPublication = null;
     currentSuggestion = null;
+    currentAI = null;
     templateDraft = null;
     if (focusBeforeDialog?.isConnected) focusBeforeDialog.focus();
   }
@@ -519,6 +522,15 @@
     if (name === "open-review") return page("reviews");
     if (name === "open-tasks") return page("tasks");
     if (name === "open-admin") return admin();
+    if (name === "ai-answer" || name === "ai-writing") {
+      if (!state.ai?.ready) return toast("模型尚未配置，当前仍可使用本地检索和摘录。");
+      const writing = name === "ai-writing", preview = currentSuggestion;
+      if (writing && (!preview || state.dirty || state.editor?.id !== preview.artifact_id)) throw new Error("请先保存文档并重新预览。");
+      if (!writing && !state.messages.some(item => item.id === id)) throw new Error("请重新读取当前消息。");
+      currentAI = { feature: writing ? "writing" : "answer", target: writing ? preview.id : id, preview,
+        conversation: state.activeConversation, generation: chatGeneration, key: crypto.randomUUID() };
+      return modal("确认模型调用", V.aiConsent(ui(), currentAI.feature), button("取消", "x", "close-dialog") + formButton("确认并生成", "sparkles", "ai-consent-form"));
+    }
     if (name === "close-dialog") { autosaver.pause(false); pendingNavigation = null; return closeDialog(); }
     if (name === "confirm-navigation") { const next = pendingNavigation; pendingNavigation = null; await autosaver.settled(); autosaver.reset(null); closeDialog(); state.dirty = false; return next?.(); }
     if (name === "account") return modal("当前账号", `<dl class="task-details"><dt>姓名</dt><dd>${esc(state.user.name)}</dd><dt>账号</dt><dd>${esc(state.user.username)}</dd><dt>角色</dt><dd>${state.user.role === "admin" ? "管理员" : "员工"}</dd></dl>`, button("关闭", "x", "close-dialog") + (state.user.role === "admin" ? button("修改密码", "key-round", "reset-account-password", false, `data-id="${esc(state.user.id)}"`) : "") + button("退出登录", "log-out", "logout"));
@@ -652,11 +664,12 @@
       const preview = currentSuggestion;
       if (!preview) throw new Error("建议已关闭，请重新预览。");
       if (state.dirty || state.editor.id !== preview.artifact_id || state.editor.revision !== preview.base_revision || snapshot() !== preview.localSnapshot) throw new Error("本页正文或文档信息已变化，请保存后重新预览。");
-      await api(`/artifacts/${preview.artifact_id}/suggestions/${preview.id}/apply`, { base_revision: preview.base_revision });
+      const generation = preview.ai?.state === "succeeded" && !preview.ai.output.insufficient ? { generation_id: preview.ai.id } : {};
+      await api(`/artifacts/${preview.artifact_id}/suggestions/${preview.id}/apply`, { base_revision: preview.base_revision, ...generation });
       const [latest] = await Promise.all([api(`/artifacts/${preview.artifact_id}`), records()]);
       if (currentSuggestion !== preview || state.editor?.id !== preview.artifact_id || snapshot() !== preview.localSnapshot) return toast("采纳已保存，请重新打开文档读取新修订。");
       state.editor = latest; state.currentRevision = latest.revision; setBaseline(); closeDialog(); render();
-      return toast("摘录已采纳并保存为新修订，需重新审核。");
+      return toast("建议已采纳并保存为新修订，需重新审核。");
     }
     if (name === "cancel-suggestion") {
       if (currentSuggestion) await api(`/artifacts/${currentSuggestion.artifact_id}/suggestions/${currentSuggestion.id}/cancel`, {});
@@ -750,6 +763,27 @@
     const data = new FormData(form);
     const type = form.dataset.form;
     const intent = () => ({ key: form.dataset.intentKey || (form.dataset.intentKey = crypto.randomUUID()) });
+    if (type === "ai-consent") {
+      const pending = currentAI;
+      if (!pending || data.get("consent") !== "on") throw new Error("请先确认本次内容可以发送给外部模型。");
+      const path = pending.feature === "writing" ? `/artifacts/${pending.preview.artifact_id}/suggestions/${pending.target}/ai` : `/messages/${pending.target}/ai`;
+      let result;
+      dialog.dataset.locked = "true";
+      try { result = await api(path, { consent: true }, { key: pending.key }); }
+      finally { if (currentAI === pending && dialog.querySelector("#ai-consent-form") === form) dialog.dataset.locked = "false"; }
+      if (currentAI !== pending || !dialog.open) return;
+      if (pending.feature === "writing") {
+        const preview = await api(`/artifacts/${pending.preview.artifact_id}/suggestions/${pending.target}`);
+        if (currentAI !== pending || state.editor?.id !== preview.artifact_id || snapshot() !== pending.preview.localSnapshot) return toast("结果已保存，请重新打开文档预览。");
+        currentSuggestion = { ...preview, localSnapshot: pending.preview.localSnapshot };
+        currentAI = null;
+        modal("采纳预览", W.suggestionPreview(ui(), preview), button("取消建议", "x", "cancel-suggestion") + button("确认采纳并保存", "check", "apply-suggestion", true));
+      } else {
+        closeDialog();
+        if (state.activeConversation === pending.conversation && chatGeneration === pending.generation) await refreshConversation();
+      }
+      return toast(result.state === "succeeded" ? "模型结果已生成，请核对引用和内容。" : "生成未完成，已保留本地摘录；不会自动重试。");
+    }
     if (type === "login" || type === "reauth") {
       const user = await api("/session", { username: data.get("username"), password: data.get("password"), remember: type === "login" && data.get("remember") === "on" }, { login: true });
       if (type === "reauth") {

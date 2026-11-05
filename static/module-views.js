@@ -22,7 +22,7 @@ globalThis.CARD_HOME = (() => {
   function toolbar(ui) {
     const { state, icon, iconButton } = ui;
     const name = state.activeModule === "admin" ? "管理后台" : modules.find(item => item.id === state.activeModule)?.name || "工作台";
-    return `<header class="card-toolbar"><div class="breadcrumbs"><span>演示空间</span>${icon("chevron-right")}<strong>${name}</strong></div><div class="topbar-tools"><span class="mode-indicator">离线检索</span>${iconButton("bell", "查看待办", "open-tasks")}${iconButton("user-round", "账号与退出登录", "account")}</div></header>`;
+    return `<header class="card-toolbar"><div class="breadcrumbs"><span>演示空间</span>${icon("chevron-right")}<strong>${name}</strong></div><div class="topbar-tools"><span class="mode-indicator">${state.ai?.ready ? "DeepSeek 可用" : "离线检索"}</span>${iconButton("bell", "查看待办", "open-tasks")}${iconButton("user-round", "账号与退出登录", "account")}</div></header>`;
   }
   function header(ui, direction) {
     if (direction !== "tasks") return toolbar(ui);
@@ -31,7 +31,7 @@ globalThis.CARD_HOME = (() => {
   function moduleCount(id, ui) {
     if (id === "library") return `${ui.sources.length} 份资料 / ${globalThis.WORKBENCH_VIEWS.publishedSources(ui).length} 已发布`;
     if (id === "document") return `<span data-module-document-count>${ui.state.documents.length}</span> 份文档 / 2 个模板`;
-    return `${globalThis.WORKBENCH_VIEWS.publishedSources(ui).length} 份可问答资料 / 离线检索`;
+    return `${globalThis.WORKBENCH_VIEWS.publishedSources(ui).length} 份可问答资料 / ${ui.state.ai?.ready ? "模型辅助" : "离线检索"}`;
   }
   function moduleBody(id, ui) {
     const { icon, state, esc } = ui;
@@ -80,12 +80,12 @@ globalThis.CARD_HOME = (() => {
     if (module.id === "library") content = `<div class="module-workspace library-workspace">${ui.libraryBody(true)}</div>`;
     else if (module.id === "document") content = `<div class="document-workspace-toolbar">${documentTabs(ui)}${button("从模板新建", "plus", "new-document", true)}</div><div class="work-document-grid large-grid" data-card-documents data-large-documents>${documentGrid(ui, true)}</div>`;
     else content = `<div class="module-workspace assistant-workspace"><section class="embedded-chat"><div class="conversation-heading"><div><h2>${icon("bot")}企业助手</h2><p class="conversation-title">${ui.esc(state.conversation?.title || (state.activeConversation ? "读取会话" : "历史问答"))}</p></div><div class="conversation-tools">${state.conversation ? ui.iconButton("pencil", "重命名会话", "rename-chat") + ui.iconButton(state.conversation.status === "archived" ? "archive-restore" : "archive", state.conversation.status === "archived" ? "恢复会话" : "归档会话", "archive-chat") : ""}${button("新会话", "square-pen", "new-chat")}</div></div><div class="chat-history" data-chat-history aria-live="polite">${ui.conversationHistory()}</div>${ui.composer()}</section><aside class="embedded-sources">${ui.conversationList()}<div class="section-heading reference-heading"><h2>参考资料</h2></div><div data-reference-list>${ui.referenceList()}</div></aside></div>`;
-    return `<div class="workspace-title"><button class="back-home" data-action="home">${icon("arrow-left")}工作台</button><h1 tabindex="-1">${module.name}</h1><span class="caption">虚构资料 / 离线样稿</span></div>${content}`;
+    return `<div class="workspace-title"><button class="back-home" data-action="home">${icon("arrow-left")}工作台</button><h1 tabindex="-1">${module.name}</h1><span class="caption">虚构资料 / ${state.ai?.ready ? "模型按需调用" : "离线样稿"}</span></div>${content}`;
   }
   function render(ui) {
     const { direction, state } = ui;
     const content = ui.screenOverride || (state.activeModule ? workspace(ui) : modulesHome(ui));
-    return `<div class="card-shell">${sidebar(ui, direction)}<div class="card-content-shell">${header(ui, direction)}<main class="card-main ${state.activeModule ? "in-workspace" : ""}" id="main">${content}<footer class="card-page-footer">${ui.icon("shield-check")}虚构资料 / 离线规则 / 数据保存于当前演示库</footer></main></div></div>`;
+    return `<div class="card-shell">${sidebar(ui, direction)}<div class="card-content-shell">${header(ui, direction)}<main class="card-main ${state.activeModule ? "in-workspace" : ""}" id="main">${content}<footer class="card-page-footer">${ui.icon("shield-check")}虚构资料 / ${state.ai?.ready ? "模型按需调用" : "离线规则"} / 数据保存于当前演示库</footer></main></div></div>`;
   }
   return Object.freeze({ render, documentGrid, taskCards, taskBoard, modules });
 })();

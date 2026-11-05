@@ -16,6 +16,7 @@ import uuid
 from store import Problem, fail
 from auth import REMEMBER_SECONDS, SESSION_SECONDS
 from document_import import ImportProblem, MAX_UPLOAD_BYTES, read_multipart
+from ai_service import AIService
 
 
 @dataclass
@@ -26,8 +27,9 @@ class Response:
 
 
 class Application:
-    def __init__(self, store, origin="http://127.0.0.1:4180", static=None):
+    def __init__(self, store, origin="http://127.0.0.1:4180", static=None, ai=None):
         self.store = store
+        self.ai = ai or AIService(store)
         parsed = urlsplit(origin)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"}:
             raise ValueError("WORKBENCH_ORIGIN must be an exact HTTP(S) origin")
@@ -83,7 +85,7 @@ class Application:
             if method == "GET" and not path.startswith("/api/"):
                 response = self.asset(path)
             elif method == "GET" and path == "/api/workbench/health":
-                response = self.json_response({"status": "ok", "mode": "offline_keyword", "version": "0.11.2"}, request_id=request_id)
+                response = self.json_response({"status": "ok", "mode": self.ai.status()["mode"], "version": "0.12.0"}, request_id=request_id)
             elif method == "GET" and path == "/api/workbench/login-options":
                 response = self.json_response(self.login_options(), request_id=request_id)
             else:
@@ -196,6 +198,10 @@ class Application:
                 data = s.import_usage(user)
             elif endpoint == "/admin":
                 data = s.admin_summary(user)
+                data["ai"] = self.ai.admin_status(user)
+                data["model_connected"] = data["ai"]["ready"]
+            elif endpoint == "/ai/status":
+                data = self.ai.status()
             elif endpoint == "/admin/publications":
                 data = s.admin_publications(user)
             elif endpoint == "/admin/feedback":
@@ -223,7 +229,11 @@ class Application:
             else:
                 fail(404, "NOT_FOUND", "接口不存在。")
         elif method == "POST":
-            if endpoint == "/admin/users":
+            if match := re.fullmatch(r"/messages/([A-Za-z0-9_-]+)/ai", endpoint):
+                data = self.ai.generate(user, "answer", match[1], body, key)
+            elif match := re.fullmatch(r"/artifacts/([A-Za-z0-9_-]+)/suggestions/([A-Za-z0-9_-]+)/ai", endpoint):
+                data = self.ai.generate(user, "writing", match[2], body, key, match[1])
+            elif endpoint == "/admin/users":
                 data = s.create_user(user, body, key)
             elif endpoint == "/admin/categories":
                 data = s.create_category(user, body, key)
