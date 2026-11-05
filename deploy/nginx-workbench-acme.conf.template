@@ -1,0 +1,11 @@
+# Temporary NEW host block for certificate issuance only. Never combine with the final port-80 block.
+server {
+    listen 80;
+    server_name workbench.example.com;
+    location /.well-known/acme-challenge/ {
+        root /var/www/bolai-workbench-acme;
+    }
+    location / {
+        return 503;
+    }
+}

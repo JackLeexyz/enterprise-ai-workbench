@@ -1,0 +1,28 @@
+[Unit]
+Description=Bolai enterprise workbench isolated demo
+After=network.target
+
+[Service]
+Type=simple
+User=bolai-workbench
+Group=bolai-workbench
+WorkingDirectory=/opt/bolai-workbench/current
+EnvironmentFile=/etc/bolai-workbench.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/bolai-workbench/current/.venv/bin/python3 server.py --database /var/lib/bolai-workbench/workbench.db --port 4180 --trust-proxy
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bolai-workbench
+MemoryMax=384M
+CPUQuota=75%
+TasksMax=64
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

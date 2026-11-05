@@ -1,0 +1,40 @@
+{
+  "templates": [
+    {
+      "template_id": "solution", "name": "产品方案",
+      "fields": [
+        {"key": "subject", "label": "方案对象", "required": true, "multiline": false},
+        {"key": "objective", "label": "需求目标", "required": true, "multiline": true},
+        {"key": "approach", "label": "建议方案", "required": false, "multiline": true},
+        {"key": "steps", "label": "实施步骤", "required": false, "multiline": true},
+        {"key": "budget", "label": "预算", "required": false, "multiline": false},
+        {"key": "schedule", "label": "实施日期", "required": false, "multiline": false}
+      ],
+      "sections": [
+        {"key": "needs", "title": "需求理解", "field_keys": ["subject", "objective"]},
+        {"key": "approach", "title": "建议方案", "field_keys": ["approach"]},
+        {"key": "steps", "title": "实施步骤", "field_keys": ["steps"]},
+        {"key": "pending", "title": "待确认事项", "field_keys": ["budget", "schedule"]}
+      ]
+    },
+    {
+      "template_id": "delivery", "name": "交付说明",
+      "fields": [
+        {"key": "subject", "label": "交付对象", "required": true, "multiline": false},
+        {"key": "content", "label": "交付内容", "required": true, "multiline": true},
+        {"key": "environment", "label": "环境与前提", "required": false, "multiline": true},
+        {"key": "steps", "label": "实施步骤", "required": false, "multiline": true},
+        {"key": "acceptance", "label": "验收清单", "required": false, "multiline": true},
+        {"key": "price", "label": "报价", "required": false, "multiline": false},
+        {"key": "delivery_date", "label": "交付日期", "required": false, "multiline": false}
+      ],
+      "sections": [
+        {"key": "scope", "title": "交付范围", "field_keys": ["subject", "content"]},
+        {"key": "environment", "title": "环境与前提", "field_keys": ["environment"]},
+        {"key": "steps", "title": "实施步骤", "field_keys": ["steps"]},
+        {"key": "acceptance", "title": "验收清单", "field_keys": ["acceptance"]},
+        {"key": "pending", "title": "待确认事项", "field_keys": ["price", "delivery_date"]}
+      ]
+    }
+  ]
+}

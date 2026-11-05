@@ -1,0 +1,33 @@
+{
+  "dataset_version": "synthetic-keyword-v1-20261104",
+  "description": "手工编写的虚构小样本；不是客户问答集，不衡量模型生成质量或生产容量。",
+  "additional_sources": [
+    {"id": "eval_private", "title": "虚构私有检查", "owner_id": "u_writer", "scope": "private", "publication": "published", "sections": [{"title": "私有记录", "text": "审计暗号 secretvault，仅用于隔离测试。"}]},
+    {"id": "eval_withdrawn", "title": "虚构撤回检查", "owner_id": "u_writer", "scope": "internal", "publication": "withdrawn", "sections": [{"title": "撤回记录", "text": "撤回暗号 archivedcode，不可作为新问答依据。"}]},
+    {"id": "eval_draft", "title": "虚构草稿检查", "owner_id": "u_writer", "scope": "private", "publication": "draft", "sections": [{"title": "草稿记录", "text": "草稿暗号 draftmemo，尚未发布。"}]},
+    {"id": "eval_selected", "title": "虚构指定共享", "owner_id": "u_admin", "scope": "selected", "shared_user_ids": ["u_reviewer"], "publication": "published", "sections": [{"title": "定向记录", "text": "定向暗号 selectedmemo，仅指定同事可见。"}]}
+  ],
+  "cases": [
+    {"id": "q01", "group": "retrieval", "question": "验收清单和用户培训记录", "required": [["delivery", 0]]},
+    {"id": "q02", "group": "retrieval", "question": "账号状态和资料共享范围", "required": [["faq", 0]]},
+    {"id": "q03", "group": "retrieval", "question": "设备申领用途", "required": [["policy", 0]]},
+    {"id": "q04", "group": "retrieval", "question": "未完成项处理人计划日期", "required": [["delivery", 1]]},
+    {"id": "q05", "group": "retrieval", "question": "问题描述复现步骤密码密钥", "required": [["faq", 1]]},
+    {"id": "q06", "group": "retrieval", "question": "客户确认后归档文档版本", "required": [["delivery", 2]]},
+    {"id": "q07", "group": "retrieval", "question": "经营分析", "scope": "product", "required": [["product", 2]]},
+    {"id": "q08", "group": "retrieval", "question": "知识问答使用已发布资料", "scope": "product", "required": [["product", 0]]},
+    {"id": "q09", "group": "retrieval", "question": "未经授权的资料", "scope": "faq", "required": [["faq", 0]]},
+    {"id": "q10", "group": "no_evidence", "question": "unfindableexample742", "expect_empty": true},
+    {"id": "q11", "group": "no_evidence", "question": "火星矿石价格", "expect_empty": true},
+    {"id": "q12", "group": "paraphrase", "question": "怎么申请一台电脑", "required": [["policy", 0]], "note": "同义改写，用于暴露纯关键词方法的局限。"},
+    {"id": "q13", "group": "no_evidence", "question": "设备库存还有多少台", "expect_empty": true, "note": "资料仅说明库存需人工确认，并无实际库存数字。"},
+    {"id": "q14", "group": "access_control", "question": "secretvault", "scope": "eval_private", "required": [["eval_private", 0]]},
+    {"id": "q15", "group": "access_control", "question": "secretvault", "scope": "eval_private", "user": "reviewer", "expect_empty": true},
+    {"id": "q16", "group": "access_control", "question": "secretvault", "scope": "eval_private", "user": "admin", "expect_empty": true},
+    {"id": "q17", "group": "access_control", "question": "archivedcode", "scope": "eval_withdrawn", "expect_empty": true},
+    {"id": "q18", "group": "access_control", "question": "draftmemo", "scope": "eval_draft", "expect_empty": true},
+    {"id": "q19", "group": "access_control", "question": "selectedmemo", "scope": "eval_selected", "user": "reviewer", "required": [["eval_selected", 0]]},
+    {"id": "q20", "group": "access_control", "question": "selectedmemo", "scope": "eval_selected", "expect_empty": true},
+    {"id": "q21", "group": "access_control", "question": "验收", "scope": "nonexistent", "expect_empty": true}
+  ]
+}

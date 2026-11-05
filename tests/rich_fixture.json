@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "blocks": [
+    {"id":"rh1","type":"heading","level":1,"text":"企业知识协作实施说明","runs":[{"text":"企业知识协作实施说明"}]},
+    {"id":"rh2","type":"heading","level":2,"text":"资料准备与验收","runs":[{"text":"资料准备与验收"}]},
+    {"id":"rp1","type":"paragraph","text":"本稿仅含虚构资料。关键事项需要负责人确认，未提供的预算和日期不作推断。","runs":[{"text":"本稿仅含虚构资料。"},{"text":"关键事项","marks":[{"type":"bold"}]},{"text":"需要负责人确认，未提供的预算和日期不作推断。","marks":[{"type":"italic"}]}]},
+    {"id":"rh3","type":"heading","level":3,"text":"交付材料清单","runs":[{"text":"交付材料清单"}]},
+    {"id":"rt1","type":"table","header":true,"text":"材料名称\t责任人\t核对结果\n实施说明\t项目负责人\t待人工审核\n培训记录\t[待确认]\t待补充","rows":[
+      [{"text":"材料名称","runs":[{"text":"材料名称"}]},{"text":"责任人","runs":[{"text":"责任人"}]},{"text":"核对结果","runs":[{"text":"核对结果"}]}],
+      [{"text":"实施说明","runs":[{"text":"实施说明"}]},{"text":"项目负责人","runs":[{"text":"项目负责人"}]},{"text":"待人工审核","runs":[{"text":"待人工审核","marks":[{"type":"bold"}]}]}],
+      [{"text":"培训记录","runs":[{"text":"培训记录"}]},{"text":"[待确认]","runs":[{"text":"[待确认]"}]},{"text":"待补充","runs":[{"text":"待补充"}]}]
+    ]},
+    {"id":"rb1","type":"bullet","text":"引用资料与稿件正文分别鉴权。","runs":[{"text":"引用资料与稿件正文分别鉴权。"}]},
+    {"id":"rp2","type":"paragraph","text":"链接样例（非业务系统）","runs":[{"text":"链接样例（非业务系统）","marks":[{"type":"link","href":"https://example.com/docs?demo=1&source=workbench"}]}]}
+  ]
+}
