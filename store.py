@@ -1704,6 +1704,14 @@ class Store:
                 return {"id": pid, "status": "awaiting_confirmation", **preview}
             return self.once(db, user, "task_preview", key, payload, operation)
 
+    def insert_task(self, db, user, assignee_id, title, note, due_date):
+        if not db.execute("SELECT 1 FROM users WHERE id=? AND enabled=1", (assignee_id,)).fetchone():
+            fail(422, "ASSIGNEE_REQUIRED", "负责人已停用，请重新选择并预览任务。")
+        tid, stamp = ident("task"), now()
+        db.execute("INSERT INTO tasks(id,creator_id,assignee_id,title,note,due_date,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", (tid, user["id"], assignee_id, title, note, due_date, stamp, stamp))
+        self.audit(db, user, "task_confirmed", tid)
+        return tid
+
     def confirm_task(self, user, pid, payload, key):
         with self.connection(write=True) as db:
             def operation():
@@ -1716,12 +1724,8 @@ class Store:
                 if preview["expires"] < time.time():
                     fail(409, "PREVIEW_EXPIRED", "任务预览已过期，请重新预览。")
                 data = json.loads(preview["payload_json"])
-                if not db.execute("SELECT 1 FROM users WHERE id=? AND enabled=1", (data["assignee_id"],)).fetchone():
-                    fail(422, "ASSIGNEE_REQUIRED", "负责人已停用，请重新选择并预览任务。")
-                tid, stamp = ident("task"), now()
-                db.execute("INSERT INTO tasks(id,creator_id,assignee_id,title,note,due_date,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", (tid, user["id"], data["assignee_id"], data["title"], data["note"], data["due_date"], stamp, stamp))
+                tid = self.insert_task(db, user, data["assignee_id"], data["title"], data["note"], data["due_date"])
                 db.execute("UPDATE task_previews SET task_id=? WHERE id=?", (tid, pid))
-                self.audit(db, user, "task_confirmed", tid)
                 return {"id": tid, "status": "pending"}
             return self.once(db, user, "task_confirm:" + pid, key, payload, operation)
 

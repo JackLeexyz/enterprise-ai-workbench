@@ -1,5 +1,9 @@
 # 文库导入与智能协作 API 契约
 
+## 0.13 项目验收演示（默认关闭）
+
+仅在独立演示库启用：`GET /acceptance/projects`、`GET /acceptance/projects/:id`，项目成员可查；`POST /acceptance/projects/:id/items/:item/preview`、`POST /acceptance/previews/:id/confirm`、`POST /acceptance/projects/:id/items/:item/received` 仅项目负责人可操作。所有请求继承会话、CSRF、Origin 和幂等校验；确认前重新检查台账版本与资料权限。台账依据不可用时不判缺项，不接外部业务系统。
+
 本文件描述本批已实现接口。软件修订 0.12.0；完整富文本编辑器、完整工单与完整V1.0.0尚未完成，项目根V1_ACCEPTANCE.md保留全部差距。前缀 `/api/workbench`，写入用 POST 或下表指定的 PATCH；除文件上传使用 multipart 外，均用 JSON。每次返回 `X-Request-Id`；普通成功为 `{data,request_id}`，错误为 `{error:{code,message},request_id}`。新增按需模型接口/状态/安全限制见[AI_SETUP.md](AI_SETUP.md)，默认不启用模型。
 
 ## 会话与安全

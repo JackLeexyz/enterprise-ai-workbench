@@ -6,12 +6,14 @@ globalThis.CARD_HOME = (() => {
     { id: "document", name: "智能写作", icon: "notebook-pen", tone: "teal", action: "open-documents" },
     { id: "assistant", name: "企业助手", icon: "bot", tone: "amber", action: "open-chat" }
   ];
+  const acceptance = { id: "acceptance", name: "项目验收", icon: "clipboard-check", action: "open-acceptance" };
   function viewBar(direction) {
     return "";
   }
   function brand(icon) { return `<div class="brand"><span class="brand-mark">${icon("panels-top-left")}</span>企业 AI 工作台</div>`; }
   function navigation(state, icon, top = false) {
     const items = [{ id: "home", name: "工作台", icon: "layout-grid", action: "home" }, ...modules];
+    if (state.loginOptions?.acceptance_demo) items.push(acceptance);
     return `<nav class="${top ? "card-top-links" : "card-side-links"}" aria-label="主导航">${items.map(item => `<button type="button" class="${(state.activeModule || "home") === item.id ? "is-active" : ""}" data-action="${item.action}" ${(state.activeModule || "home") === item.id ? 'aria-current="page"' : ""}>${icon(item.icon)}<span>${item.name}</span></button>`).join("")}</nav>`;
   }
   function user(ui) { return `<button class="user account-button" data-action="account" aria-label="账号与退出登录"><span class="avatar" aria-hidden="true">${ui.esc(ui.state.user.name.slice(0, 1))}</span><span><span class="user-name">${ui.esc(ui.state.user.name)}</span><small>${ui.state.user.role === "admin" ? "管理员" : "员工"}</small></span></button>`; }
@@ -21,7 +23,7 @@ globalThis.CARD_HOME = (() => {
   }
   function toolbar(ui) {
     const { state, icon, iconButton } = ui;
-    const name = state.activeModule === "admin" ? "管理后台" : modules.find(item => item.id === state.activeModule)?.name || "工作台";
+    const name = state.activeModule === "admin" ? "管理后台" : [...modules, acceptance].find(item => item.id === state.activeModule)?.name || "工作台";
     return `<header class="card-toolbar"><div class="breadcrumbs"><span>演示空间</span>${icon("chevron-right")}<strong>${name}</strong></div><div class="topbar-tools"><span class="mode-indicator">${state.ai?.ready ? "DeepSeek 可用" : "离线检索"}</span>${iconButton("bell", "查看待办", "open-tasks")}${iconButton("user-round", "账号与退出登录", "account")}</div></header>`;
   }
   function header(ui, direction) {
@@ -65,7 +67,8 @@ globalThis.CARD_HOME = (() => {
   function homeSearch(ui) { return `<form class="home-search" data-home-search>${ui.icon("search")}<input type="search" name="query" aria-label="搜索知识库资料" placeholder="搜索资料名称或关键词" maxlength="100"><button type="submit" aria-label="搜索资料" data-tooltip="搜索资料">${ui.icon("arrow-right")}</button></form>`; }
   function pageTitle(ui, title, subtitle = "演示空间 / 员工工作台") { return `<div class="card-page-heading"><div><h1 tabindex="-1">${title}</h1><p>${subtitle}</p></div>${ui.button("新建文档", "plus", "new-document", true)}</div>`; }
   function modulesHome(ui) {
-    return `${pageTitle(ui, "工作台")}${homeSearch(ui)}<section class="open-section"><div class="section-heading"><h2>功能模块</h2><span class="caption">3 个应用</span></div>${moduleCards(ui)}</section><div class="work-overview"><section class="open-section"><div class="section-heading"><h2>继续工作</h2><button class="text-button" data-action="open-documents">全部文档 ${ui.icon("arrow-up-right")}</button></div><div class="work-document-grid" data-card-documents>${documentGrid(ui)}</div></section><section class="open-section"><div class="section-heading"><h2>我的待办<span class="count" data-task-count>${ui.state.tasks.filter(item => item.status !== "已完成").length}</span></h2><button class="text-button" data-action="open-tasks">全部 ${ui.icon("arrow-up-right")}</button></div><div class="work-task-stack" data-card-tasks>${taskCards(ui)}</div></section></div>`;
+    const link = ui.state.loginOptions?.acceptance_demo ? ui.button("项目验收助手", acceptance.icon, acceptance.action) : "";
+    return `${pageTitle(ui, "工作台")}${homeSearch(ui)}<section class="open-section"><div class="section-heading"><h2>功能模块</h2>${link || '<span class="caption">3 个应用</span>'}</div>${moduleCards(ui)}</section><div class="work-overview"><section class="open-section"><div class="section-heading"><h2>继续工作</h2><button class="text-button" data-action="open-documents">全部文档 ${ui.icon("arrow-up-right")}</button></div><div class="work-document-grid" data-card-documents>${documentGrid(ui)}</div></section><section class="open-section"><div class="section-heading"><h2>我的待办<span class="count" data-task-count>${ui.state.tasks.filter(item => item.status !== "已完成").length}</span></h2><button class="text-button" data-action="open-tasks">全部 ${ui.icon("arrow-up-right")}</button></div><div class="work-task-stack" data-card-tasks>${taskCards(ui)}</div></section></div>`;
   }
   function tasksHome(ui) {
     return `${pageTitle(ui, "我的工作", "演示空间 / 任务视图")}<section class="open-section">${moduleCards(ui, true)}</section><section class="open-section"><div class="section-heading"><h2>我的待办</h2><span class="caption">负责人：我</span></div><div class="task-board" data-card-task-board>${taskBoard(ui)}</div></section><section class="open-section recent-task-documents"><div class="section-heading"><h2>最近文档</h2><button class="text-button" data-action="open-documents">全部文档 ${ui.icon("arrow-up-right")}</button></div><div class="work-document-grid task-document-grid" data-card-documents>${documentGrid(ui)}</div></section>`;

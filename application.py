@@ -6,6 +6,7 @@ import hmac
 from http.cookies import SimpleCookie
 import json
 import mimetypes
+import os
 from pathlib import Path
 import re
 import threading
@@ -17,6 +18,7 @@ from store import Problem, fail
 from auth import REMEMBER_SECONDS, SESSION_SECONDS
 from document_import import ImportProblem, MAX_UPLOAD_BYTES, read_multipart
 from ai_service import AIService
+from acceptance import AcceptanceDemo
 
 
 @dataclass
@@ -27,9 +29,11 @@ class Response:
 
 
 class Application:
-    def __init__(self, store, origin="http://127.0.0.1:4180", static=None, ai=None):
+    def __init__(self, store, origin="http://127.0.0.1:4180", static=None, ai=None, acceptance_demo=None):
         self.store = store
         self.ai = ai or AIService(store)
+        enabled = os.getenv("WORKBENCH_ACCEPTANCE_DEMO") == "1" if acceptance_demo is None else acceptance_demo
+        self.acceptance = AcceptanceDemo(store) if enabled else None
         parsed = urlsplit(origin)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"}:
             raise ValueError("WORKBENCH_ORIGIN must be an exact HTTP(S) origin")
@@ -49,6 +53,7 @@ class Application:
         choices = [("writer", "写作员工", "employee"), ("reviewer", "审核同事", "employee"), ("admin", "管理员", "admin")]
         users = {item["username"]: item for item in self.store.users()} if self.store.demo_mode else {}
         return {"demo": self.store.demo_mode, "password_min_length": self.store.password_min_length,
+                **({"acceptance_demo": True} if self.acceptance else {}),
                 "remember_seconds": REMEMBER_SECONDS if self.store.demo_mode else SESSION_SECONDS,
                 "accounts": [{"username": name, "label": label} for name, label, role in choices
                              if name in users and users[name]["id"] == "u_" + name and users[name]["role"] == role]}
@@ -85,7 +90,7 @@ class Application:
             if method == "GET" and not path.startswith("/api/"):
                 response = self.asset(path)
             elif method == "GET" and path == "/api/workbench/health":
-                response = self.json_response({"status": "ok", "mode": self.ai.status()["mode"], "version": "0.12.0"}, request_id=request_id)
+                response = self.json_response({"status": "ok", "mode": self.ai.status()["mode"], "version": "0.13.0"}, request_id=request_id)
             elif method == "GET" and path == "/api/workbench/login-options":
                 response = self.json_response(self.login_options(), request_id=request_id)
             else:
@@ -159,6 +164,10 @@ class Application:
     def dispatch(self, method, path, query, body, user, key, request_id):
         s, prefix = self.store, "/api/workbench"
         endpoint = path[len(prefix):]
+        if endpoint.startswith("/acceptance/"):
+            if not self.acceptance:
+                fail(404, "NOT_FOUND", "接口不存在。")
+            return self.json_response(self.acceptance.route(method, endpoint, user, body, key), request_id=request_id)
         if method == "GET":
             if endpoint == "/session":
                 data = user

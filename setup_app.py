@@ -7,6 +7,7 @@ from pathlib import Path
 import secrets
 
 from store import Store
+from acceptance import seed_demo
 
 
 def main():
@@ -14,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", default=str(root / "data/workbench.db"))
     parser.add_argument("--credentials-out", default=str(root / "private/登录信息.json"))
+    parser.add_argument("--acceptance-demo", action="store_true", help="Seed fictional acceptance projects in this new database only.")
     args = parser.parse_args()
     target = Path(args.credentials_out)
     if target.exists():
@@ -29,6 +31,9 @@ def main():
         with os.fdopen(descriptor, "w") as output:
             json.dump({"notice": "仅此独立虚构演示库的登录信息，不得用于其他系统或公开分享。", "accounts": [{"username": username, "password": password} for username, password in passwords.items()]}, output, ensure_ascii=False, indent=2)
         store.bootstrap(passwords, json.loads((root / "fixtures.json").read_text()))
+        if args.acceptance_demo:
+            with store.connection(write=True) as db:
+                seed_demo(db)
         Path(args.database).chmod(0o600)
     except Exception:
         print("Initialization failed. Existing files were retained for inspection; no secrets printed.")

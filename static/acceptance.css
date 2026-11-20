@@ -1,0 +1,12 @@
+.acceptance-query { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-block: 12px 18px; }
+.acceptance-query .form-field { flex: 0 1 300px; margin: 0; }
+.acceptance-list { list-style: none; padding: 0; margin: 12px 0; border-top: 1px solid #e2e8f0; }
+.acceptance-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, auto) auto; align-items: center; gap: 12px; min-height: 62px; padding-block: 10px; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; }
+.acceptance-item p { margin: 4px 0 0; }
+.acceptance-status, .acceptance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.acceptance-evidence { padding-block: 8px; overflow-wrap: anywhere; }
+.acceptance-evidence summary { cursor: pointer; }
+@media (max-width: 680px) {
+  .acceptance-item { grid-template-columns: minmax(0, 1fr) auto; }
+  .acceptance-actions { grid-column: 1 / -1; }
+}

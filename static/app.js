@@ -18,7 +18,8 @@
     conversations: [], legacyMessages: [], activeConversation: null, conversation: null,
     nextChatCursor: null, currentChatCursor: null, chatLoading: false, chatError: "",
     chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false,
-    ai: { ready: false, mode: "offline_keyword" }
+    ai: { ready: false, mode: "offline_keyword" },
+    acceptance: { projects: [], project: null, busy: false }
   };
   const names = { draft: "草稿", pending: "待审核", approved: "已通过", rejected: "已退回", superseded: "已失效", historical: "历史修订", in_progress: "进行中", completed: "已完成", canceled: "已取消" };
   const keys = new Map();
@@ -61,6 +62,7 @@
     if (state.page === "editor") context.screenOverride = W.editorInfo(context) + V.editor(context);
     if (state.page === "reviews") context.screenOverride = V.queue(context);
     if (state.page === "admin") context.screenOverride = V.admin(context);
+    if (state.page === "acceptance") context.screenOverride = globalThis.WORKBENCH_ACCEPTANCE.workspace(context);
     if (state.page === "tasks") context.screenOverride = `<div class="workspace-title"><button class="back-home" data-action="home">${icon("arrow-left")}工作台</button><h1 tabindex="-1">我的待办</h1>${button("新建待办", "plus", "new-task", true)}</div><div class="task-list-grid">${state.tasks.map(task => `<button class="work-task" data-action="task" data-id="${task.id}"><span class="task-type">${icon(task.kind === "review" ? "file-check-2" : "list-todo")}${task.kind === "review" ? "文档审核" : esc(task.assignee_name)}</span><h3>${esc(task.title)}</h3><p>${esc(task.note)}</p><div class="task-card-footer">${status(task.status)}<span>${esc(task.due)}</span></div></button>`).join("") || '<p class="empty">暂无待办</p>'}</div>`;
     return context;
   }
@@ -170,6 +172,37 @@
       if (module === "assistant" && state.activeConversation) return loadConversation(state.activeConversation);
       render(true);
     });
+  }
+  async function openAcceptance() {
+    if (!state.loginOptions.acceptance_demo) return;
+    await navigate(async () => {
+      const actor = state.user;
+      const projects = await api("/acceptance/projects");
+      if (actor !== state.user) return;
+      state.acceptance = { projects, project: null, busy: false };
+      state.page = state.activeModule = "acceptance";
+      state.editor = null;
+      state.dirty = false;
+      render(true);
+    });
+  }
+  async function checkAcceptance(id) {
+    const view = state.acceptance;
+    if (view.busy || state.page !== "acceptance") return;
+    if (!view.projects.some(item => item.id === id)) throw new Error("请先选择要核对的项目。");
+    view.project = null;
+    view.busy = true;
+    render();
+    try { view.project = await api("/acceptance/projects/" + encodeURIComponent(id)); }
+    finally {
+      view.busy = false;
+      if (view === state.acceptance && state.page === "acceptance") render();
+    }
+  }
+  async function refreshAcceptanceAfterWrite(message, id) {
+    closeDialog();
+    try { await checkAcceptance(id); toast(message); }
+    catch { toast(message + "；台账暂未回读，请重新核对材料。"); }
   }
   function snapshot() { return JSON.stringify({ title: state.editor.title, content_json: state.editor.content_json, citations: state.editor.citations, reference_details: state.editor.reference_details, fields: state.editor.fields || {} }); }
   function draftPayload() { return clone({ title: state.editor.title, content_json: state.editor.content_json, citations: state.editor.citations, fields: state.editor.fields || {} }); }
@@ -453,6 +486,7 @@
     autosaver.reset(null);
     keys.clear();
     chatEpoch++; chatGeneration++; createChatKey = null;
+    state.acceptance = { projects: [], project: null, busy: false };
     Object.assign(state, { conversations: [], legacyMessages: [], activeConversation: null, conversation: null, chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false, chatError: "", chatLoading: false, currentChatCursor: null, nextChatCursor: null });
     Object.assign(state, { user: null, sources: [], imports: [], importTargets: {}, importUsage: null, documents: [], reviews: [], tasks: [], messages: [], users: [], categories: [], templates: [], adminData: null, adminUsers: [], adminCategories: [], adminFeedback: [], adminTemplates: [], publications: [], editor: null, dirty: false, baseline: "", undo: [], recovery: null, newDocumentDraft: null, page: "home", activeModule: null });
     render(true);
@@ -519,6 +553,26 @@
     if (name === "open-library") return page("module", "library");
     if (name === "open-documents") return page("module", "document");
     if (name === "open-chat") return page("module", "assistant");
+    if (name === "open-acceptance") return openAcceptance();
+    if (name.startsWith("acceptance-") && state.page === "acceptance") {
+      const project = state.acceptance.project;
+      if (!project || state.acceptance.busy) return;
+      const item = project.items.find(row => row.item_id === id);
+      if (name === "acceptance-confirm") {
+        await api("/acceptance/previews/" + encodeURIComponent(id) + "/confirm", {});
+        return refreshAcceptanceAfterWrite("补件待办已创建。", project.id);
+      }
+      if (!item) return;
+      const route = `/acceptance/projects/${encodeURIComponent(project.id)}/items/${encodeURIComponent(item.item_id)}`;
+      if (name === "acceptance-preview") {
+        const result = await api(route + "/preview", { base_version: project.version });
+        if (state.page !== "acceptance" || state.acceptance.project !== project) return;
+        return modal("确认补件待办", `<dl class="task-details"><dt>任务</dt><dd>${esc(result.title)}</dd><dt>负责人</dt><dd>${esc(result.assignee_name)}</dd><dt>截止日期</dt><dd>${esc(result.due_date)}</dd></dl>`, button("取消", "x", "close-dialog") + button("确认创建", "check", "acceptance-confirm", true, `data-id="${esc(result.id)}"`));
+      }
+      if (name === "acceptance-receive") {
+        return modal("登记到件：" + item.name, `<form id="acceptance-received-form" data-form="acceptance-received" data-project="${esc(project.id)}" data-item="${esc(item.item_id)}" data-version="${project.version}"><label class="form-field">材料版本<input name="material_version" maxlength="30" required placeholder="例如 v1.0"></label></form>`, button("取消", "x", "close-dialog") + formButton("保存并回读", "check", "acceptance-received-form"));
+      }
+    }
     if (name === "open-review") return page("reviews");
     if (name === "open-tasks") return page("tasks");
     if (name === "open-admin") return admin();
@@ -763,6 +817,13 @@
     const data = new FormData(form);
     const type = form.dataset.form;
     const intent = () => ({ key: form.dataset.intentKey || (form.dataset.intentKey = crypto.randomUUID()) });
+    if (type === "acceptance-check") return checkAcceptance(data.get("project_id"));
+    if (type === "acceptance-received") {
+      const { project, item, version } = form.dataset;
+      await api(`/acceptance/projects/${encodeURIComponent(project)}/items/${encodeURIComponent(item)}/received`,
+        { base_version: Number(version), material_version: data.get("material_version") }, intent());
+      return refreshAcceptanceAfterWrite("已登记到件。", project);
+    }
     if (type === "ai-consent") {
       const pending = currentAI;
       if (!pending || data.get("consent") !== "on") throw new Error("请先确认本次内容可以发送给外部模型。");
@@ -1004,6 +1065,7 @@
     if (target.matches("[data-chat-input]")) { chatDraft().text = target.value; return; }
     if (target.form?.matches?.('[data-form="source-version"],[data-form="source-sharing"],[data-form="artifact-sharing"],[data-form="import-confirm"]')) delete target.form.dataset.intentKey;
     if (target.form?.matches('[data-form="account-edit"],[data-form="account-password"],[data-form="category-edit"]')) delete target.form.dataset.intentKey;
+    if (target.form?.matches('[data-form="acceptance-received"]')) delete target.form.dataset.intentKey;
     if (target.matches("[data-account-query]")) { state.accountQuery = target.value; const list = root.querySelector("[data-account-table]"); if (list) { list.innerHTML = A.accountRows(ui()); icons(); } return; }
     if (target.matches("[data-source-query]")) { state.sourceQuery = target.value; const list = root.querySelector("[data-source-list]"); if (list) { list.innerHTML = V.sourceList(ui()); icons(); } return; }
     if (!R.editable(state.editor, state.historyMode) || state.saving) return;

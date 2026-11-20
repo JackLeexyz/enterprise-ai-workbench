@@ -173,6 +173,23 @@ CREATE TABLE IF NOT EXISTS idempotency (
   user_id TEXT NOT NULL, key TEXT NOT NULL, route TEXT NOT NULL, payload_hash TEXT NOT NULL,
   result_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(user_id,key)
 );
+CREATE TABLE IF NOT EXISTS acceptance_projects (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, due_date TEXT NOT NULL,
+  owner_id TEXT NOT NULL REFERENCES users(id), reviewer_id TEXT NOT NULL REFERENCES users(id),
+  source_id TEXT NOT NULL REFERENCES sources(id), version INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS acceptance_items (
+  project_id TEXT NOT NULL REFERENCES acceptance_projects(id),
+  item_id TEXT NOT NULL, name TEXT NOT NULL, assignee_id TEXT NOT NULL REFERENCES users(id),
+  material_version TEXT, updated_at TEXT NOT NULL, task_id TEXT REFERENCES tasks(id),
+  PRIMARY KEY(project_id,item_id)
+);
+CREATE TABLE IF NOT EXISTS acceptance_previews (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, item_id TEXT NOT NULL,
+  creator_id TEXT NOT NULL REFERENCES users(id), project_version INTEGER NOT NULL,
+  expires REAL NOT NULL, task_id TEXT REFERENCES tasks(id),
+  FOREIGN KEY(project_id,item_id) REFERENCES acceptance_items(project_id,item_id)
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL, action TEXT NOT NULL,
   object_id TEXT NOT NULL, created_at TEXT NOT NULL
