@@ -85,7 +85,7 @@ class AIService:
                 binding = s.suggestion_ai_binding(row)
                 source_ids = [source["id"]]
             if any(sid not in self.settings.source_ids for sid in source_ids):
-                fail(403, "AI_SOURCE_NOT_ALLOWED", "资料未获准发送到外部模型，本次仍可使用本地摘录。")
+                fail(403, "AI_SOURCE_NOT_ALLOWED", "部分资料未获准发送到外部模型。可继续查看本地摘录，或选择获准的资料范围后重新提问。")
             return binding, [{"role": "system", "content": SYSTEM}, {"role": "user", "content": dump(prompt)}], len(source_ids)
 
     def generate(self, user, feature, target, payload, key, artifact=None):

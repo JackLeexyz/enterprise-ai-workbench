@@ -182,13 +182,21 @@ CREATE TABLE IF NOT EXISTS acceptance_items (
   project_id TEXT NOT NULL REFERENCES acceptance_projects(id),
   item_id TEXT NOT NULL, name TEXT NOT NULL, assignee_id TEXT NOT NULL REFERENCES users(id),
   material_version TEXT, updated_at TEXT NOT NULL, task_id TEXT REFERENCES tasks(id),
+  material_source_id TEXT REFERENCES sources(id), material_source_version_id TEXT,
   PRIMARY KEY(project_id,item_id)
 );
 CREATE TABLE IF NOT EXISTS acceptance_previews (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, item_id TEXT NOT NULL,
   creator_id TEXT NOT NULL REFERENCES users(id), project_version INTEGER NOT NULL,
-  expires REAL NOT NULL, task_id TEXT REFERENCES tasks(id),
+  expires REAL NOT NULL, task_id TEXT REFERENCES tasks(id), evidence_fingerprint TEXT, previous_task_id TEXT,
   FOREIGN KEY(project_id,item_id) REFERENCES acceptance_items(project_id,item_id)
+);
+CREATE TABLE IF NOT EXISTS acceptance_reviews (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES acceptance_projects(id),
+  project_version INTEGER NOT NULL, snapshot_hash TEXT NOT NULL,
+  submitted_by TEXT NOT NULL REFERENCES users(id), submitted_at TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
+  decided_by TEXT REFERENCES users(id), decided_at TEXT, comment TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL, action TEXT NOT NULL,

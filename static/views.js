@@ -134,11 +134,11 @@ globalThis.WORKBENCH_VIEWS = (() => {
   }
   function aiAnswer(ui, item) {
     const ai = item.ai;
-    if (ai?.state === "succeeded") return `<section class="ai-answer"><div class="response-byline">${ui.icon("sparkles")}AI 回答<span>${ui.esc(ai.model)} / 待核实</span></div><p class="ai-generated-text">${ui.esc(ai.output.text)}</p><p class="caption">引用 ${ai.output.citations.map(number => `[${number}]`).join(" ")} / ${ai.usage.total_tokens == null ? "用量未回传" : `${ai.usage.total_tokens} Token`}${ai.output.insufficient ? " / 依据不足" : ""}</p></section>`;
+    if (ai?.state === "succeeded") return `<section class="ai-answer"><div class="response-byline">${ui.icon("sparkles")}AI 回答<span>${ui.esc(ai.model)} / 待核实</span></div><p class="ai-generated-text">${ui.esc(ai.output.text)}</p><p class="caption">引用 ${ai.output.citations.map(number => `[${number}]`).join(" ")} / ${ai.usage.total_tokens == null ? "用量未回传" : `${ai.usage.total_tokens} Token`}${ai.output.insufficient ? " / 依据不足" : ""}</p><p class="caption">引用仅表示关联资料，请核对原文是否支持结论。</p></section>`;
     if (ai?.state === "failed") return '<p class="notice warning">本次模型生成未完成，保留本地摘录；不会自动重试或重复调用。</p>';
     if (ai?.state === "pending") return '<p class="notice" role="status">模型请求已提交，结果尚未确认。请稍后重新读取。</p>';
     if (item.reply_type === "needs_info" || !item.matches.length || item.unavailable_count || item.matches.some(match => match.historical)) return "";
-    return ui.button(ui.state.ai?.ready ? "AI 整理回答" : "AI 未启用", "sparkles", "ai-answer", false, `data-id="${ui.esc(item.id)}" ${ui.state.ai?.ready ? "" : "disabled"}`);
+    return '<p class="caption">以下是相关资料摘录，不保证包含问题的具体答案。</p>' + ui.button(ui.state.ai?.ready ? "AI 整理回答" : "AI 未启用", "sparkles", "ai-answer", false, `data-id="${ui.esc(item.id)}" ${ui.state.ai?.ready ? "" : "disabled"}`);
   }
   function aiConsent(ui, feature) {
     return `<form id="ai-consent-form" data-form="ai-consent"><p class="notice warning">${feature === "writing" ? "目标段落和选定资料摘录" : "本次问题和检索命中的资料摘录"}将发送至 DeepSeek。不会发送整个文库、其他会话或账号信息。</p><p class="caption">${ui.esc(ui.state.ai?.model)} / 单次最多 ${ui.state.ai?.max_output_tokens || 1024} 输出 Token / 按实际调用消耗平台额度</p><label class="form-field ai-consent"><input type="checkbox" name="consent" required>我已确认本次内容可发送至外部模型</label></form>`;

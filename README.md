@@ -2,7 +2,7 @@
 
 ## 0.13 测试分支：项目验收助手
 
-独立虚构数据演示：选择项目、核对材料与引用依据、预览补件待办、人工确认、登记到件并重新查询。只允许项目负责人写入；审核人只读。基于固定规则，不调用模型，不代表客户生产交付。以 `setup_app.py --acceptance-demo` 初始化新隔离库，并以 `WORKBENCH_ACCEPTANCE_DEMO=1` 显式开启；默认关闭，不给既有库插入样例。
+独立虚构数据演示：可人工新建项目及材料清单，选择项目核对材料与引用依据，预览补件待办、人工确认、跨角色处理、登记到件、关联资料并重新查询。验收台账由项目负责人维护，审核人可处理分配给自己的待办。验收检查基于固定规则，不自动调用模型，不代表客户生产交付。以 `setup_app.py --acceptance-demo` 初始化新隔离库，并以 `WORKBENCH_ACCEPTANCE_DEMO=1` 显式开启；默认关闭，不给既有库插入样例。
 
 这是软件0.12.0的公开脱敏源码，用于演示企业文库、文档协作与知识助手的应用流程。仓库不含运行库、登录口令、用户会话或客户资料，所有内置样本均为虚构。操作演示见[演示指南](DEMO_GUIDE.md)，能力边界见[验收清单](V1_ACCEPTANCE.md)，部署模板见[部署说明](deploy/README.md)。**默认离线；可选DeepSeek知识问答和章节写作接入见[模型配置](AI_SETUP.md)，实现/配置就绪不等于真实模型已验证。**
 
@@ -96,6 +96,15 @@ python3 -m unittest discover -s tests -v
 node tests/frontend-smoke.cjs
 python3 evaluate_retrieval.py --out evaluation/retrieval-report.json
 ```
+
+检索回归可在修改前保存基线、修改后使用相同测试资料与题集对比：
+
+```bash
+python3 evaluate_retrieval.py --out evaluation/baseline.json
+python3 evaluate_retrieval.py --baseline evaluation/baseline.json --out evaluation/current.json
+```
+
+报告包含题集、样例和检索代码指纹，逐题列出新增回退与改进；题集或样例指纹变化时拒绝比较，输出不得覆盖基线。已有失败保留，新增回退或权限违规返回非零。评测使用虚构资料和离线关键词检索，不调用模型，也不衡量回答准确率。报告仅包含自建测试内容，不应将真实客户资料直接替换到此公开示例中。
 
 开发阶段0.11.0曾通过284项后端、179项模板/模拟控制器及18项自动保存队列检查；可在本仓库重新运行验证。完整历史工程日志不随公开源码发布。模拟DOM/API不等于真实浏览器、网络联调或桌面/手机视觉验收。新结构Word只做XML/结构/链接关系检查，未完成新结构的渲染目检。自动保存队列可单独运行 `node tests/autosave-smoke.cjs`。
 

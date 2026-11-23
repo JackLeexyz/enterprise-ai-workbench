@@ -554,10 +554,21 @@
     if (name === "open-documents") return page("module", "document");
     if (name === "open-chat") return page("module", "assistant");
     if (name === "open-acceptance") return openAcceptance();
+    if (name === "acceptance-create" && state.page === "acceptance") {
+      const users = state.users.map(user => `<option value="${esc(user.id)}">${esc(user.name)}</option>`).join("");
+      const sources = V.publishedSources(ui()).map(source => `<option value="${esc(source.id)}">${esc(source.title)} / ${esc(source.label)}</option>`).join("");
+      return modal("新建验收项目", `<form id="acceptance-create-form" data-form="acceptance-create"><fieldset data-create-fields><label class="form-field">项目名称<input name="name" maxlength="100" required></label><label class="form-field">截止日期<input type="date" name="due_date" required></label><label class="form-field">审核人<select name="reviewer_id" required><option value="">请选择审核人</option>${users}</select></label><label class="form-field">验收依据<select name="source_id" required><option value="">请选择已发布资料</option>${sources}</select></label><label class="form-field">材料清单（每行一项，最多20项）<textarea name="items" rows="5" required></textarea></label></fieldset><p class="notice">仅使用有权共享的资料，审核人也需有权查看验收依据。</p></form>`, button("取消", "x", "close-dialog") + formButton("创建项目", "plus", "acceptance-create-form"));
+    }
     if (name.startsWith("acceptance-") && state.page === "acceptance") {
       const project = state.acceptance.project;
       if (!project || state.acceptance.busy) return;
       const item = project.items.find(row => row.item_id === id);
+      if (name === "acceptance-review-submit") {
+        return modal("提交验收审核", `<form id="acceptance-review-form" data-form="acceptance-review" data-project="${esc(project.id)}" data-version="${project.version}" data-action="submit"><p>确认材料登记齐备，并提交当前依据及台账版本供审核人核对？</p><p class="notice">手工登记不代表文件内容已验证；资料变化后审核结果将失效。</p></form>`, button("取消", "x", "close-dialog") + formButton("确认提交", "send", "acceptance-review-form"));
+      }
+      if (name === "acceptance-review-decide" && project.review?.can_decide) {
+        return modal("验收审核决定", `<form id="acceptance-review-form" data-form="acceptance-review" data-project="${esc(project.id)}" data-review="${esc(project.review.id)}" data-action="decide"><fieldset data-review-fields><label class="form-field">审核决定<select name="decision" required><option value="">请选择</option><option value="approved">通过</option><option value="rejected">退回</option></select></label><label class="form-field">审核意见（退回时必填）<textarea name="comment" maxlength="500" rows="3"></textarea></label></fieldset><p class="notice">请先核对验收依据和材料；本决定不代替客户签署。</p></form>`, button("取消", "x", "close-dialog") + formButton("确认决定", "check", "acceptance-review-form"));
+      }
       if (name === "acceptance-confirm") {
         await api("/acceptance/previews/" + encodeURIComponent(id) + "/confirm", {});
         return refreshAcceptanceAfterWrite("补件待办已创建。", project.id);
@@ -570,7 +581,16 @@
         return modal("确认补件待办", `<dl class="task-details"><dt>任务</dt><dd>${esc(result.title)}</dd><dt>负责人</dt><dd>${esc(result.assignee_name)}</dd><dt>截止日期</dt><dd>${esc(result.due_date)}</dd></dl>`, button("取消", "x", "close-dialog") + button("确认创建", "check", "acceptance-confirm", true, `data-id="${esc(result.id)}"`));
       }
       if (name === "acceptance-receive") {
-        return modal("登记到件：" + item.name, `<form id="acceptance-received-form" data-form="acceptance-received" data-project="${esc(project.id)}" data-item="${esc(item.item_id)}" data-version="${project.version}"><label class="form-field">材料版本<input name="material_version" maxlength="30" required placeholder="例如 v1.0"></label></form>`, button("取消", "x", "close-dialog") + formButton("保存并回读", "check", "acceptance-received-form"));
+        const options = V.publishedSources(ui()).map(source => `<option value="${esc(source.id)}">${esc(source.title)} / ${esc(source.label)}</option>`).join("");
+        return modal("登记到件：" + item.name, `<form id="acceptance-received-form" data-form="acceptance-received" data-project="${esc(project.id)}" data-item="${esc(item.item_id)}" data-version="${project.version}"><label class="form-field">材料版本<input name="material_version" maxlength="30" required placeholder="例如 v1.0"></label><label class="form-field">关联已发布资料（可选）<select name="material_source_id"><option value="">不关联资料</option>${options}</select></label><p class="notice">登记不等于文件内容或验收结果已审核；关联资料需审核人也有权限。</p></form>`, button("取消", "x", "close-dialog") + formButton("保存并回读", "check", "acceptance-received-form"));
+      }
+      if (name === "acceptance-reassign") {
+        const options = project.assignee_candidates.map(user => `<option value="${esc(user.id)}">${esc(user.name)}</option>`).join("");
+        return modal("修改负责人：" + item.name, `<form id="acceptance-reassign-form" data-form="acceptance-reassign" data-project="${esc(project.id)}" data-item="${esc(item.item_id)}" data-version="${project.version}"><label class="form-field">项目成员<select name="assignee_id" required>${options}</select></label><p class="notice">已取消的历史待办保留，不会自动创建新待办。</p></form>`, button("取消", "x", "close-dialog") + formButton("保存并回读", "check", "acceptance-reassign-form"));
+      }
+      if (name === "acceptance-relink") {
+        const options = V.publishedSources(ui()).map(source => `<option value="${esc(source.id)}">${esc(source.title)} / ${esc(source.label)}</option>`).join("");
+        return modal("更新关联：" + item.name, `<form id="acceptance-relink-form" data-form="acceptance-relink" data-project="${esc(project.id)}" data-item="${esc(item.item_id)}" data-version="${project.version}"><label class="form-field">已发布资料<select name="material_source_id" required><option value="">请选择资料</option>${options}</select></label><p class="notice">审核人也需有权查看；更新关联不代表材料内容已审核。</p></form>`, button("取消", "x", "close-dialog") + formButton("保存并回读", "check", "acceptance-relink-form"));
       }
     }
     if (name === "open-review") return page("reviews");
@@ -818,10 +838,75 @@
     const type = form.dataset.form;
     const intent = () => ({ key: form.dataset.intentKey || (form.dataset.intentKey = crypto.randomUUID()) });
     if (type === "acceptance-check") return checkAcceptance(data.get("project_id"));
+    if (type === "acceptance-review") {
+      const { project, version, review, action } = form.dataset;
+      const fields = form.querySelector("[data-review-fields]");
+      const payload = form.pendingReview || (action === "submit" ? { base_version: Number(version) } : { review_id: review, decision: data.get("decision"), comment: data.get("comment") });
+      form.pendingReview = payload;
+      if (fields) fields.disabled = true;
+      try { await api(`/acceptance/projects/${encodeURIComponent(project)}/review/${action}`, payload, intent()); }
+      catch (error) {
+        if (error.status >= 400 && error.status < 500) { delete form.pendingReview; delete form.dataset.intentKey; if (fields) fields.disabled = false; }
+        throw error;
+      }
+      return refreshAcceptanceAfterWrite(action === "submit" ? "已提交审核。" : "审核决定已保存。", project);
+    }
+    if (type === "acceptance-create") {
+      const fields = form.querySelector("[data-create-fields]");
+      const payload = form.pendingProject || { name: data.get("name"), due_date: data.get("due_date"), reviewer_id: data.get("reviewer_id"), source_id: data.get("source_id"), items: String(data.get("items") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean) };
+      form.pendingProject = payload;
+      fields.disabled = true;
+      let created;
+      try { created = await api("/acceptance/projects", payload, intent()); }
+      catch (error) {
+        if (error.status >= 400 && error.status < 500) { delete form.pendingProject; delete form.dataset.intentKey; fields.disabled = false; }
+        throw error;
+      }
+      closeDialog();
+      try { state.acceptance.projects = await api("/acceptance/projects"); await checkAcceptance(created.id); toast("项目已创建。"); }
+      catch { toast("项目已创建；台账暂未回读，请重新打开验收助手。"); }
+      return;
+    }
+    if (type === "acceptance-reassign") {
+      const { project, item, version } = form.dataset;
+      const select = form.querySelector('select[name="assignee_id"]');
+      const payload = form.pendingReassignment || { base_version: Number(version), assignee_id: data.get("assignee_id") };
+      form.pendingReassignment = payload;
+      select.disabled = true;
+      try {
+        await api(`/acceptance/projects/${encodeURIComponent(project)}/items/${encodeURIComponent(item)}/reassign`, payload, intent());
+      } catch (error) {
+        if (error.status >= 400 && error.status < 500) {
+          delete form.pendingReassignment;
+          delete form.dataset.intentKey;
+          select.disabled = false;
+        }
+        throw error;
+      }
+      return refreshAcceptanceAfterWrite("负责人已更新。", project);
+    }
+    if (type === "acceptance-relink") {
+      const { project, item, version } = form.dataset;
+      const select = form.querySelector('select[name="material_source_id"]');
+      const payload = form.pendingRelink || { base_version: Number(version), material_source_id: data.get("material_source_id") };
+      form.pendingRelink = payload;
+      select.disabled = true;
+      try {
+        await api(`/acceptance/projects/${encodeURIComponent(project)}/items/${encodeURIComponent(item)}/relink`, payload, intent());
+      } catch (error) {
+        if (error.status >= 400 && error.status < 500) {
+          delete form.pendingRelink;
+          delete form.dataset.intentKey;
+          select.disabled = false;
+        }
+        throw error;
+      }
+      return refreshAcceptanceAfterWrite("关联资料已更新。", project);
+    }
     if (type === "acceptance-received") {
       const { project, item, version } = form.dataset;
       await api(`/acceptance/projects/${encodeURIComponent(project)}/items/${encodeURIComponent(item)}/received`,
-        { base_version: Number(version), material_version: data.get("material_version") }, intent());
+        { base_version: Number(version), material_version: data.get("material_version"), material_source_id: data.get("material_source_id") || null }, intent());
       return refreshAcceptanceAfterWrite("已登记到件。", project);
     }
     if (type === "ai-consent") {

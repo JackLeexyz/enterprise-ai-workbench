@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parent
 def evaluate(dataset_path, scratch):
     raw = Path(dataset_path).read_bytes()
     dataset = json.loads(raw)
+    ids = [case["id"] for case in dataset["cases"]]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Evaluation case IDs must be unique")
     fixture_bytes = (ROOT / "fixtures.json").read_bytes()
     with tempfile.TemporaryDirectory(prefix="keyword-eval-", dir=scratch) as temp:
         store = Store(Path(temp) / "evaluation.db")
@@ -43,20 +46,45 @@ def evaluate(dataset_path, scratch):
         group = groups.setdefault(item["group"], {"passed": 0, "total": 0})
         group["total"] += 1
         group["passed"] += int(item["contract_passed"])
-    return {"checked_at": datetime.now(timezone.utc).isoformat(), "dataset_version": dataset["dataset_version"], "dataset_sha256": hashlib.sha256(raw).hexdigest(), "fixture_sha256": hashlib.sha256(fixture_bytes).hexdigest(), "algorithm": "current Store.search; lowercase character bigrams and ASCII terms; hit ratio >= 0.10; top 5", "model_calls": 0, "quality_gate": "informational, failures retained", "security_gate_passed": not any(item["security_violations"] for item in results), "contract_passed": sum(item["contract_passed"] for item in results), "case_count": len(results), "groups": groups, "cases": results, "limitations": ["Manually authored synthetic cases, not representative customer distribution", "A retrieved excerpt is not necessarily an answer to the question", "Not an LLM, semantic RAG, answer correctness or load benchmark", "Security regressions fail the command; retrieval quality failures are reported without hiding them", "Original runtime database and customer materials are never read"]}
+    return {"checked_at": datetime.now(timezone.utc).isoformat(), "dataset_version": dataset["dataset_version"], "dataset_sha256": hashlib.sha256(raw).hexdigest(), "fixture_sha256": hashlib.sha256(fixture_bytes).hexdigest(), "store_sha256": hashlib.sha256((ROOT / "store.py").read_bytes()).hexdigest(), "algorithm": "current Store.search; lowercase character bigrams and ASCII terms; hit ratio >= 0.10; top 5", "model_calls": 0, "quality_gate": "informational, failures retained", "security_gate_passed": not any(item["security_violations"] for item in results), "contract_passed": sum(item["contract_passed"] for item in results), "case_count": len(results), "groups": groups, "cases": results, "limitations": ["Manually authored synthetic cases, not representative customer distribution", "A retrieved excerpt is not necessarily an answer to the question", "Not an LLM, semantic RAG, answer correctness or load benchmark", "Security regressions fail the command; retrieval quality failures are reported without hiding them", "Original runtime database and customer materials are never read"]}
+
+
+def compare(baseline, current):
+    for key in ("dataset_sha256", "fixture_sha256"):
+        if not baseline.get(key) or baseline.get(key) != current.get(key):
+            raise ValueError(f"Cannot compare reports: {key} differs or is missing")
+    before = {case["id"]: case for case in baseline["cases"]}
+    after = {case["id"]: case for case in current["cases"]}
+    if len(before) != len(baseline["cases"]) or len(after) != len(current["cases"]) or before.keys() != after.keys():
+        raise ValueError("Cannot compare reports: case IDs differ or are duplicated")
+    return {"baseline_checked_at": baseline.get("checked_at"), "baseline_store_sha256": baseline.get("store_sha256"),
+            "regressions": sorted(k for k in before if before[k]["contract_passed"] and not after[k]["contract_passed"]),
+            "improvements": sorted(k for k in before if not before[k]["contract_passed"] and after[k]["contract_passed"]),
+            "security_regressions": sorted(k for k in before if not before[k]["security_violations"] and after[k]["security_violations"])}
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
     parser.add_argument("--dataset", default=str(ROOT / "tests/retrieval_cases.json"))
+    parser.add_argument("--baseline", help="Prior report from the same dataset and fixtures")
     args = parser.parse_args()
     output = Path(args.out).resolve()
+    if args.baseline and output == Path(args.baseline).resolve():
+        parser.error("Output must not overwrite the baseline report")
     output.parent.mkdir(parents=True, exist_ok=True)
     report = evaluate(args.dataset, output.parent)
+    if args.baseline:
+        try:
+            report["comparison"] = compare(json.loads(Path(args.baseline).read_text()), report)
+        except ValueError as error:
+            parser.error(str(error))
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    print(json.dumps({key: report[key] for key in ("dataset_version", "case_count", "contract_passed", "groups", "quality_gate", "security_gate_passed", "model_calls")}, ensure_ascii=False))
-    if not report["security_gate_passed"]:
+    summary = {key: report[key] for key in ("dataset_version", "case_count", "contract_passed", "groups", "quality_gate", "security_gate_passed", "model_calls")}
+    if "comparison" in report:
+        summary["comparison"] = report["comparison"]
+    print(json.dumps(summary, ensure_ascii=False))
+    if not report["security_gate_passed"] or (args.baseline and report["comparison"]["regressions"]):
         raise SystemExit(1)
 
 

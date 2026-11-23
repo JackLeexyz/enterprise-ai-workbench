@@ -74,6 +74,15 @@ class Store:
             db.executescript((Path(__file__).parent / "schema.sql").read_text())
             if "revision" not in {row["name"] for row in db.execute("PRAGMA table_info(comments)")}:
                 db.execute("ALTER TABLE comments ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+            if "evidence_fingerprint" not in {row["name"] for row in db.execute("PRAGMA table_info(acceptance_previews)")}:
+                db.execute("ALTER TABLE acceptance_previews ADD COLUMN evidence_fingerprint TEXT")
+            if "previous_task_id" not in {row["name"] for row in db.execute("PRAGMA table_info(acceptance_previews)")}:
+                db.execute("ALTER TABLE acceptance_previews ADD COLUMN previous_task_id TEXT")
+            acceptance_columns = {row["name"] for row in db.execute("PRAGMA table_info(acceptance_items)")}
+            if "material_source_id" not in acceptance_columns:
+                db.execute("ALTER TABLE acceptance_items ADD COLUMN material_source_id TEXT REFERENCES sources(id)")
+            if "material_source_version_id" not in acceptance_columns:
+                db.execute("ALTER TABLE acceptance_items ADD COLUMN material_source_version_id TEXT")
             db.execute("UPDATE artifacts SET template='solution' WHERE template='产品方案'")
             db.execute("UPDATE artifacts SET template='delivery' WHERE template='交付说明'")
             for item in json.loads((Path(__file__).parent / "templates.json").read_text())["templates"]:

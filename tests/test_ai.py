@@ -146,6 +146,13 @@ class AITests(unittest.TestCase):
         self.problem("AI_SOURCE_NOT_ALLOWED", self.generate, self.ask("交付验收", "delivery"), service=self.make_service(source_ids=("product",)))
         self.assertFalse(self.calls)
 
+    def test_changed_source_after_retrieval_never_calls_model(self):
+        message = self.ask("交付验收", "delivery")
+        with self.store.connection(write=True) as db:
+            db.execute("UPDATE sources SET sections_json=? WHERE id='delivery'", (json.dumps([{"title": "变更", "text": "新内容"}]),))
+        self.problem("AI_NO_EVIDENCE", self.generate, message)
+        self.assertFalse(self.calls)
+
     def test_withdrawal_hides_generated_answer(self):
         message = self.ask()
         self.generate(message)

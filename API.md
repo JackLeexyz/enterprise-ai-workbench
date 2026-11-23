@@ -4,6 +4,12 @@
 
 仅在独立演示库启用：`GET /acceptance/projects`、`GET /acceptance/projects/:id`，项目成员可查；`POST /acceptance/projects/:id/items/:item/preview`、`POST /acceptance/previews/:id/confirm`、`POST /acceptance/projects/:id/items/:item/received` 仅项目负责人可操作。所有请求继承会话、CSRF、Origin 和幂等校验；确认前重新检查台账版本与资料权限。台账依据不可用时不判缺项，不接外部业务系统。
 
+`POST /acceptance/projects` 创建演示项目，提交名称、截止日期、审核人、材料名称及验收依据。依据必须为创建人和审核人均有权访问的已发布资料；校验名称、日期和材料数量，支持幂等重试。材料清单由人填写，不代表系统已从合同中自动提取。
+
+`POST /acceptance/projects/:id/review/submit` 由负责人提交当前台账版本，材料须全部登记且双方有权访问依据与关联资料，审核人须与负责人不同。`POST /acceptance/projects/:id/review/decide` 由指定审核人对最新待审核记录通过或退回，退回须填写意见；两者均支持幂等。审核时重新核验台账与来源快照；资料失效或变更后历史记录保留并标为过期，不等同有效通过。材料未关联文件时仍是人工声明，不能视为文件审查。
+
+`POST /acceptance/projects/:id/items/:item/reassign` 接受 `base_version` 与 `assignee_id`，仅项目负责人可将未到件材料改派给启用的项目负责人或审核人；存在待处理或进行中待办时拒绝改派。成功后台账版本递增、旧预览失效，已完成或取消的历史任务保留。项目详情仅向负责人返回可选成员。确认预览时检查完整来源版本和章节指纹，资料变化或旧预览缺少指纹时要求重新预览。
+
 本文件描述本批已实现接口。软件修订 0.12.0；完整富文本编辑器、完整工单与完整V1.0.0尚未完成，项目根V1_ACCEPTANCE.md保留全部差距。前缀 `/api/workbench`，写入用 POST 或下表指定的 PATCH；除文件上传使用 multipart 外，均用 JSON。每次返回 `X-Request-Id`；普通成功为 `{data,request_id}`，错误为 `{error:{code,message},request_id}`。新增按需模型接口/状态/安全限制见[AI_SETUP.md](AI_SETUP.md)，默认不启用模型。
 
 ## 会话与安全
