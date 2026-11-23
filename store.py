@@ -1422,6 +1422,8 @@ class Store:
         compact = re.sub(r"\s+", "", question.casefold())
         tokens = set(re.findall(r"[a-z0-9]{2,}", compact)) | {compact[i:i + 2] for i in range(max(0, len(compact) - 1))}
         tokens -= {"什么", "哪些", "怎么", "需要", "一下", "如何", "可以", "资料", "请问", "这个"}
+        if any(word in compact for word in ("电脑", "笔记本")) and any(word in compact for word in ("申请", "申领", "领用", "领取")):
+            tokens.update(("设备", "申领"))
         matches = []
         for row in db.execute("SELECT * FROM sources WHERE publication='published'"):
             if not self.current_source(db, row) or not self.readable_source(db, user, row) or (scope != "all" and row["id"] != scope):

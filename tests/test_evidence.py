@@ -81,6 +81,18 @@ class EvidenceTests(unittest.TestCase):
         for user in (self.reviewer, self.admin):
             self.problem("NOT_FOUND", self.store.get_evidence, user, message["id"], ref["evidence_id"])
 
+    def test_equipment_application_aliases_remain_evidence_and_permission_bound(self):
+        for question in ("怎么申请一台电脑", "笔记本领用流程", "设备申领用途"):
+            message = self.ask(question)
+            ref = next(match for match in message["matches"] if match["source_id"] == "policy")
+            evidence = self.store.get_evidence(self.writer, message["id"], ref["evidence_id"])
+            self.assertIn("设备申领", evidence["section"]["text"])
+        self.assertFalse(any(match["source_id"] == "policy" for match in self.ask("火星矿石价格")["matches"]))
+        with self.store.connection(write=True) as db:
+            db.execute("UPDATE sources SET scope='private',owner_id=? WHERE id='policy'", (self.writer["id"],))
+        message = self.store.ask(self.reviewer, {"question": "怎么申请一台电脑"}, self.key())
+        self.assertFalse(any(match["source_id"] == "policy" for match in message["matches"]))
+
     def test_withdrawn_evidence_hidden_from_history_and_endpoint(self):
         message = self.ask()
         ref = message["matches"][0]
