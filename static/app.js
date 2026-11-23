@@ -563,6 +563,14 @@
       const project = state.acceptance.project;
       if (!project || state.acceptance.busy) return;
       const item = project.items.find(row => row.item_id === id);
+      if (name === "acceptance-review-report") {
+        const report = await api(`/acceptance/projects/${encodeURIComponent(project.id)}/review/report`);
+        const lines = ["项目验收审核记录（演示）", `项目：${report.project}`, `台账版本：r${report.project_version}`, `审核编号：${report.review_id}`, `验收依据：${report.evidence.title} / ${report.evidence.version}`, `提交：${report.submitted_by} / ${report.submitted_at}`, `审核通过：${report.decided_by} / ${report.decided_at}`, `审核意见：${report.comment || "无"}`, "材料清单：", ...report.materials.map(item => `- ${item.name} / ${item.version} / ${item.linked ? "已关联资料" : "手工登记"}`), `生成时间：${report.generated_at}`, "本记录仅反映生成时的演示系统状态，不代替客户签署或真实验收；下载后不随资料变更自动更新。"];
+        const url = URL.createObjectURL(new Blob(["\ufeff", lines.join("\n")], { type: "text/plain;charset=utf-8" }));
+        const link = document.createElement("a"); link.href = url; link.download = "验收审核记录.txt"; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
       if (name === "acceptance-review-submit") {
         return modal("提交验收审核", `<form id="acceptance-review-form" data-form="acceptance-review" data-project="${esc(project.id)}" data-version="${project.version}" data-action="submit"><p>确认材料登记齐备，并提交当前依据及台账版本供审核人核对？</p><p class="notice">手工登记不代表文件内容已验证；资料变化后审核结果将失效。</p></form>`, button("取消", "x", "close-dialog") + formButton("确认提交", "send", "acceptance-review-form"));
       }

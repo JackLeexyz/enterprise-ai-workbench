@@ -75,16 +75,34 @@ class AcceptanceTests(unittest.TestCase):
         key = secrets.token_hex(16)
         submitted = self.req("POST", endpoint + "submit", {"base_version": 3}, key=key)
         self.assertEqual(submitted[0], 200)
+        self.assertEqual(self.req("GET", endpoint + "report")[0], 409)
         self.assertEqual(self.req("POST", endpoint + "submit", {"base_version": 3}, key=key), submitted)
         self.assertEqual(self.req("POST", endpoint + "submit", {"base_version": 3})[0], 409)
         body = {"review_id": submitted[1]["id"], "decision": "approved"}
         self.assertEqual(self.req("POST", endpoint + "decide", body)[0], 403)
         self.assertEqual(self.req("POST", endpoint + "decide", body, who="reviewer")[0], 200)
+        status, report = self.req("GET", endpoint + "report", who="reviewer")
+        self.assertEqual(status, 200)
+        self.assertEqual(report["review_id"], submitted[1]["id"])
+        self.assertEqual(len(report["materials"]), 4)
+        self.assertEqual(self.req("GET", endpoint + "report", who="admin")[0], 404)
+        with self.store.connection(write=True) as db:
+            original = db.execute("SELECT manifest_json FROM acceptance_reviews WHERE id=?", (submitted[1]["id"],)).fetchone()[0]
+            db.execute("UPDATE acceptance_reviews SET manifest_json='[]' WHERE id=?", (submitted[1]["id"],))
+        self.assertEqual(self.req("GET", endpoint + "report")[0], 409)
+        with self.store.connection(write=True) as db:
+            db.execute("UPDATE acceptance_reviews SET manifest_json=? WHERE id=?", (original, submitted[1]["id"]))
         self.assertFalse(self.req("GET", "/acceptance/projects/demo-a")[1]["review"]["stale"])
         self.assertEqual(self.req("POST", "/acceptance/projects/demo-a/items/training/relink", {"base_version": 3, "material_source_id": "delivery"})[0], 200)
         review = self.req("GET", "/acceptance/projects/demo-a")[1]["review"]
         self.assertEqual(review["status"], "approved")
         self.assertTrue(review["stale"])
+        self.assertEqual(self.req("GET", endpoint + "report")[0], 409)
+        history = self.req("GET", "/acceptance/projects/demo-a")[1]["review_history"]
+        self.assertEqual(history[0]["status"], "approved")
+        self.assertEqual(len(history[0]["materials"]), 4)
+        self.assertTrue(all(set(item) == {"name", "version", "linked"} for item in history[0]["materials"]))
+        self.assertEqual(self.req("GET", "/acceptance/projects/demo-a", who="admin")[0], 404)
 
     def test_review_reject_resubmit_and_withdrawn_evidence(self):
         endpoint = "/acceptance/projects/demo-a/review/"
@@ -96,6 +114,9 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(self.req("POST", endpoint + "decide", {**body, "comment": "补充材料说明"}, who="reviewer")[0], 200)
         rid2 = self.req("POST", endpoint + "submit", {"base_version": 3})[1]["id"]
         self.assertNotEqual(rid, rid2)
+        history = self.req("GET", "/acceptance/projects/demo-a", who="reviewer")[1]["review_history"]
+        self.assertEqual([item["status"] for item in history], ["pending", "rejected"])
+        self.assertEqual(history[1]["comment"], "补充材料说明")
         with self.store.connection(write=True) as db:
             db.execute("UPDATE sources SET publication='withdrawn' WHERE id='delivery'")
         self.assertTrue(self.req("GET", "/acceptance/projects/demo-a")[1]["review"]["stale"])
@@ -152,6 +173,7 @@ class AcceptanceTests(unittest.TestCase):
             "task_id TEXT REFERENCES tasks(id), evidence_fingerprint TEXT, previous_task_id TEXT,",
             "task_id TEXT REFERENCES tasks(id),")
         old_schema = old_schema.replace("  material_source_id TEXT REFERENCES sources(id), material_source_version_id TEXT,\n", "")
+        old_schema = old_schema.replace("  manifest_json TEXT\n", "  legacy_placeholder TEXT\n")
         self.assertNotEqual(old_schema, Path("schema.sql").read_text())
         with sqlite3.connect(path) as db:
             db.executescript(old_schema)
@@ -164,6 +186,7 @@ class AcceptanceTests(unittest.TestCase):
             self.assertIn("previous_task_id", columns)
             item_columns = {row[1] for row in db.execute("PRAGMA table_info(acceptance_items)")}
             self.assertTrue({"material_source_id", "material_source_version_id"}.issubset(item_columns))
+            self.assertIn("manifest_json", {row[1] for row in db.execute("PRAGMA table_info(acceptance_reviews)")})
             self.assertEqual(db.execute("SELECT name FROM categories WHERE id='legacy-test'").fetchone()[0], "旧分类")
 
     def test_access_scope_and_role_are_distinct(self):

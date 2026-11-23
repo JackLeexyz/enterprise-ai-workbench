@@ -96,7 +96,7 @@ class AcceptanceDemo:
         if self.evidence(db, user, project) is None:
             fail(409, "ACCEPTANCE_EVIDENCE_UNAVAILABLE", "验收依据不可用，暂不能核对缺项。")
 
-    def review_snapshot(self, db, project):
+    def review_snapshot(self, db, project, *, with_manifest=False):
         people = ({"id": project["owner_id"]}, {"id": project["reviewer_id"]})
         evidence = [self.evidence(db, person, project, snapshot=True) for person in people]
         if not all(evidence) or evidence[0] != evidence[1]:
@@ -116,7 +116,25 @@ class AcceptanceDemo:
                 if any(source["version_id"] != item["material_source_version_id"] for source in sources):
                     fail(409, "ACCEPTANCE_MATERIAL_UNAVAILABLE", "关联资料版本已变化，请重新核实。")
                 item["source_fingerprint"] = fingerprint(dict(sources[0]))
-        return fingerprint({"project_version": project["version"], "evidence": evidence[0], "items": items})
+        result = fingerprint({"project_version": project["version"], "evidence": evidence[0], "items": items})
+        if with_manifest:
+            manifest = [{"name": item["name"], "version": item["material_version"], "linked": bool(item["material_source_id"])} for item in items]
+            return result, manifest
+        return result
+
+    @staticmethod
+    def review_history(db, project):
+        rows = db.execute("SELECT r.id,r.status,r.project_version,r.submitted_at,r.decided_at,r.comment,r.manifest_json,"
+                          "submitter.name AS submitted_by,decider.name AS decided_by FROM acceptance_reviews r "
+                          "JOIN users submitter ON submitter.id=r.submitted_by LEFT JOIN users decider ON decider.id=r.decided_by "
+                          "WHERE r.project_id=? ORDER BY r.rowid DESC LIMIT 50", (project["id"],))
+        result = []
+        for row in rows:
+            entry = dict(row)
+            raw = entry.pop("manifest_json")
+            entry["materials"] = json.loads(raw) if raw else None
+            result.append(entry)
+        return result
 
     def review_status(self, db, user, project):
         row = db.execute("SELECT * FROM acceptance_reviews WHERE project_id=? ORDER BY rowid DESC LIMIT 1", (project["id"],)).fetchone()
@@ -130,6 +148,23 @@ class AcceptanceDemo:
         result["can_decide"] = user["id"] == project["reviewer_id"] and user["id"] != project["owner_id"] and row["status"] == "pending" and not result["stale"]
         return result
 
+    def review_report(self, db, user, project):
+        status = self.review_status(db, user, project)
+        if not status or status["status"] != "approved" or status["stale"]:
+            fail(409, "ACCEPTANCE_REPORT_UNAVAILABLE", "仅当前有效的通过记录可生成审核记录。")
+        entry = self.review_history(db, project)[0]
+        if entry["materials"] is None:
+            fail(409, "ACCEPTANCE_REPORT_UNAVAILABLE", "旧记录未保存材料快照，请重新提交审核。")
+        _, current_manifest = self.review_snapshot(db, project, with_manifest=True)
+        if entry["materials"] != current_manifest:
+            fail(409, "ACCEPTANCE_REPORT_UNAVAILABLE", "材料快照不一致，请重新核实。")
+        evidence = self.evidence(db, user, project)
+        return {"project": project["name"], "project_version": entry["project_version"], "review_id": entry["id"],
+                "submitted_at": entry["submitted_at"], "submitted_by": entry["submitted_by"],
+                "decided_at": entry["decided_at"], "decided_by": entry["decided_by"], "comment": entry["comment"],
+                "evidence": {"title": evidence["title"], "version": evidence["version"]},
+                "materials": entry["materials"], "generated_at": now()}
+
     def submit_review(self, db, user, project, body, key):
         if user["id"] != project["owner_id"]:
             fail(403, "ACCEPTANCE_OWNER_REQUIRED", "只有项目负责人可以提交验收。")
@@ -140,12 +175,12 @@ class AcceptanceDemo:
                 fail(409, "ACCEPTANCE_REVIEWER_REQUIRED", "审核人已停用。")
             if project["version"] != version(body.get("base_version")):
                 fail(409, "ACCEPTANCE_CHANGED", "台账已更新，请重新核对。")
-            snapshot = self.review_snapshot(db, project)
+            snapshot, manifest = self.review_snapshot(db, project, with_manifest=True)
             last = db.execute("SELECT status,snapshot_hash FROM acceptance_reviews WHERE project_id=? ORDER BY rowid DESC LIMIT 1", (project["id"],)).fetchone()
             if last and last["snapshot_hash"] == snapshot and last["status"] in {"pending", "approved"}:
                 fail(409, "ACCEPTANCE_REVIEW_EXISTS", "当前版本已提交或已通过审核。")
             rid = ident("review")
-            db.execute("INSERT INTO acceptance_reviews(id,project_id,project_version,snapshot_hash,submitted_by,submitted_at,status) VALUES(?,?,?,?,?,?,'pending')", (rid, project["id"], project["version"], snapshot, user["id"], now()))
+            db.execute("INSERT INTO acceptance_reviews(id,project_id,project_version,snapshot_hash,submitted_by,submitted_at,status,manifest_json) VALUES(?,?,?,?,?,?,'pending',?)", (rid, project["id"], project["version"], snapshot, user["id"], now(), json.dumps(manifest, ensure_ascii=False)))
             self.store.audit(db, user, "acceptance_review_submitted", rid)
             return {"id": rid, "status": "pending"}
         return self.store.once(db, user, "acceptance_review_submit:" + project["id"], key, body, operation)
@@ -190,7 +225,7 @@ class AcceptanceDemo:
         can_update = user["id"] == project["owner_id"]
         candidates = [dict(row) for row in db.execute("SELECT id,name FROM users WHERE enabled=1 AND id IN (?,?) ORDER BY name", (project["owner_id"], project["reviewer_id"]))] if can_update else []
         return {**{k: project[k] for k in ("id", "name", "due_date", "version")},
-                "evidence": evidence, "items": items, "summary": summary, "can_update": can_update, "assignee_candidates": candidates, "review": self.review_status(db, user, project)}
+                "evidence": evidence, "items": items, "summary": summary, "can_update": can_update, "assignee_candidates": candidates, "review": self.review_status(db, user, project), "review_history": self.review_history(db, project)}
 
     def reassign(self, db, user, project, item, body, key):
         if user["id"] != project["owner_id"]:
@@ -314,6 +349,8 @@ class AcceptanceDemo:
                 db.execute("BEGIN")
                 if endpoint == "/acceptance/projects":
                     return [dict(p) for p in db.execute("SELECT id,name,due_date FROM acceptance_projects WHERE ? IN (owner_id,reviewer_id) ORDER BY id", (user["id"],))]
+                if match := re.fullmatch(r"/acceptance/projects/([\w-]+)/review/report", endpoint):
+                    return self.review_report(db, user, self.project(db, user, match[1]))
                 if match := re.fullmatch(r"/acceptance/projects/([\w-]+)", endpoint):
                     return self.detail(db, user, self.project(db, user, match[1]))
             if method == "POST":

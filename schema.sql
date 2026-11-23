@@ -196,7 +196,8 @@ CREATE TABLE IF NOT EXISTS acceptance_reviews (
   project_version INTEGER NOT NULL, snapshot_hash TEXT NOT NULL,
   submitted_by TEXT NOT NULL REFERENCES users(id), submitted_at TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
-  decided_by TEXT REFERENCES users(id), decided_at TEXT, comment TEXT NOT NULL DEFAULT ''
+  decided_by TEXT REFERENCES users(id), decided_at TEXT, comment TEXT NOT NULL DEFAULT '',
+  manifest_json TEXT
 );
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT NOT NULL, action TEXT NOT NULL,

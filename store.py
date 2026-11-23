@@ -83,6 +83,8 @@ class Store:
                 db.execute("ALTER TABLE acceptance_items ADD COLUMN material_source_id TEXT REFERENCES sources(id)")
             if "material_source_version_id" not in acceptance_columns:
                 db.execute("ALTER TABLE acceptance_items ADD COLUMN material_source_version_id TEXT")
+            if "manifest_json" not in {row["name"] for row in db.execute("PRAGMA table_info(acceptance_reviews)")}:
+                db.execute("ALTER TABLE acceptance_reviews ADD COLUMN manifest_json TEXT")
             db.execute("UPDATE artifacts SET template='solution' WHERE template='产品方案'")
             db.execute("UPDATE artifacts SET template='delivery' WHERE template='交付说明'")
             for item in json.loads((Path(__file__).parent / "templates.json").read_text())["templates"]:
