@@ -174,6 +174,7 @@ class AcceptanceTests(unittest.TestCase):
             "task_id TEXT REFERENCES tasks(id),")
         old_schema = old_schema.replace("  material_source_id TEXT REFERENCES sources(id), material_source_version_id TEXT,\n", "")
         old_schema = old_schema.replace("  manifest_json TEXT\n", "  legacy_placeholder TEXT\n")
+        old_schema = old_schema.replace("created_at TEXT NOT NULL, updated_at TEXT NOT NULL, result_note TEXT NOT NULL DEFAULT ''", "created_at TEXT NOT NULL, updated_at TEXT NOT NULL")
         self.assertNotEqual(old_schema, Path("schema.sql").read_text())
         with sqlite3.connect(path) as db:
             db.executescript(old_schema)
@@ -187,6 +188,7 @@ class AcceptanceTests(unittest.TestCase):
             item_columns = {row[1] for row in db.execute("PRAGMA table_info(acceptance_items)")}
             self.assertTrue({"material_source_id", "material_source_version_id"}.issubset(item_columns))
             self.assertIn("manifest_json", {row[1] for row in db.execute("PRAGMA table_info(acceptance_reviews)")})
+            self.assertIn("result_note", {row[1] for row in db.execute("PRAGMA table_info(tasks)")})
             self.assertEqual(db.execute("SELECT name FROM categories WHERE id='legacy-test'").fetchone()[0], "旧分类")
 
     def test_access_scope_and_role_are_distinct(self):

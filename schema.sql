@@ -167,7 +167,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, creator_id TEXT NOT NULL REFERENCES users(id),
   assignee_id TEXT NOT NULL REFERENCES users(id), title TEXT NOT NULL, note TEXT NOT NULL,
   due_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', version INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, result_note TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS task_conversation_links (
+  task_id TEXT PRIMARY KEY REFERENCES tasks(id), conversation_id TEXT NOT NULL REFERENCES conversations(id)
 );
 CREATE TABLE IF NOT EXISTS idempotency (
   user_id TEXT NOT NULL, key TEXT NOT NULL, route TEXT NOT NULL, payload_hash TEXT NOT NULL,

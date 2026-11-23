@@ -85,6 +85,8 @@ class Store:
                 db.execute("ALTER TABLE acceptance_items ADD COLUMN material_source_version_id TEXT")
             if "manifest_json" not in {row["name"] for row in db.execute("PRAGMA table_info(acceptance_reviews)")}:
                 db.execute("ALTER TABLE acceptance_reviews ADD COLUMN manifest_json TEXT")
+            if "result_note" not in {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}:
+                db.execute("ALTER TABLE tasks ADD COLUMN result_note TEXT NOT NULL DEFAULT ''")
             db.execute("UPDATE artifacts SET template='solution' WHERE template='产品方案'")
             db.execute("UPDATE artifacts SET template='delivery' WHERE template='交付说明'")
             for item in json.loads((Path(__file__).parent / "templates.json").read_text())["templates"]:
@@ -1503,7 +1505,8 @@ class Store:
             rows = db.execute("SELECT m.* FROM messages m JOIN conversation_messages c ON c.message_id=m.id WHERE c.conversation_id=? AND c.sequence<? ORDER BY c.sequence DESC LIMIT 20", (cid, before)).fetchall()
             messages = [self.message_view(db, user, item) for item in reversed(rows)]
             next_cursor = messages[0]["sequence"] if messages and messages[0]["sequence"] > 1 else None
-            return {"conversation": info, "messages": messages, "next_cursor": next_cursor}
+            tasks = [dict(item) for item in db.execute("SELECT t.id,t.title,t.status,t.result_note,t.updated_at,u.name AS assignee_name FROM task_conversation_links l JOIN tasks t ON t.id=l.task_id JOIN users u ON u.id=t.assignee_id WHERE l.conversation_id=? AND t.creator_id=? ORDER BY t.updated_at DESC LIMIT 100", (cid, user["id"]))]
+            return {"conversation": info, "messages": messages, "next_cursor": next_cursor, "related_tasks": tasks}
 
     def ask_conversation(self, user, cid, payload, key):
         question, base = text(payload.get("text"), "问题", 500), version(payload.get("base_version"))
@@ -1698,6 +1701,9 @@ class Store:
         title = text(payload.get("title"), "任务标题", 120)
         note = text(payload.get("note", ""), "任务说明", 2000, False)
         due = text(payload.get("due_date", ""), "日期", 10, False)
+        conversation_id = payload.get("conversation_id") or None
+        if conversation_id is not None:
+            conversation_id = text(conversation_id, "会话编号", 80)
         if due:
             try:
                 date.fromisoformat(due)
@@ -1705,11 +1711,13 @@ class Store:
                 fail(422, "INVALID_DATE", "请填写有效日期。")
         with self.connection(write=True) as db:
             def operation():
+                if conversation_id and self.conversation_row(db, user, conversation_id)["status"] != "active":
+                    fail(409, "CONVERSATION_ARCHIVED", "归档会话不能创建新任务。")
                 assignee_id = text(payload.get("assignee_id"), "负责人标识", 80)
                 assignee = db.execute("SELECT id,name FROM users WHERE id=? AND enabled=1", (assignee_id,)).fetchone()
                 if not assignee:
                     fail(422, "ASSIGNEE_REQUIRED", "请选择任务负责人。")
-                preview = {"title": title, "note": note, "due_date": due, "assignee_id": assignee[0], "assignee_name": assignee[1]}
+                preview = {"title": title, "note": note, "due_date": due, "assignee_id": assignee[0], "assignee_name": assignee[1], "conversation_id": conversation_id}
                 pid = ident("preview")
                 db.execute("INSERT INTO task_previews(id,creator_id,payload_json,expires) VALUES(?,?,?,?)", (pid, user["id"], dump(preview), time.time() + 900))
                 return {"id": pid, "status": "awaiting_confirmation", **preview}
@@ -1735,7 +1743,12 @@ class Store:
                 if preview["expires"] < time.time():
                     fail(409, "PREVIEW_EXPIRED", "任务预览已过期，请重新预览。")
                 data = json.loads(preview["payload_json"])
+                cid = data.get("conversation_id")
+                if cid and self.conversation_row(db, user, cid)["status"] != "active":
+                    fail(409, "CONVERSATION_ARCHIVED", "会话已归档，请重新预览。")
                 tid = self.insert_task(db, user, data["assignee_id"], data["title"], data["note"], data["due_date"])
+                if cid:
+                    db.execute("INSERT INTO task_conversation_links(task_id,conversation_id) VALUES(?,?)", (tid, cid))
                 db.execute("UPDATE task_previews SET task_id=? WHERE id=?", (tid, pid))
                 return {"id": tid, "status": "pending"}
             return self.once(db, user, "task_confirm:" + pid, key, payload, operation)
@@ -1748,6 +1761,9 @@ class Store:
         target = payload.get("status")
         if target not in {"in_progress", "completed", "canceled"}:
             fail(422, "INVALID_INPUT", "任务状态无效。")
+        result_note = text(payload.get("result_note", ""), "处理结果", 2000, False)
+        if target != "completed" and result_note:
+            fail(422, "INVALID_INPUT", "处理结果仅在完成任务时填写。")
         with self.connection(write=True) as db:
             def operation():
                 row = db.execute("SELECT * FROM tasks WHERE id=? AND (creator_id=? OR assignee_id=?)", (tid, user["id"], user["id"])).fetchone()
@@ -1757,7 +1773,7 @@ class Store:
                     fail(409, "VERSION_CONFLICT", "任务状态已变化，请刷新。")
                 if (target == "canceled" and row["creator_id"] != user["id"]) or (target != "canceled" and row["assignee_id"] != user["id"]):
                     fail(403, "TASK_ROLE_REQUIRED", "只有负责人可以处理，只有创建人可以取消。")
-                db.execute("UPDATE tasks SET status=?,version=version+1,updated_at=? WHERE id=?", (target, now(), tid))
+                db.execute("UPDATE tasks SET status=?,result_note=?,version=version+1,updated_at=? WHERE id=?", (target, result_note, now(), tid))
                 self.audit(db, user, "task_" + target, tid)
                 return {"id": tid, "status": target, "version": row["version"] + 1}
             return self.once(db, user, "task_update:" + tid, key, payload, operation)

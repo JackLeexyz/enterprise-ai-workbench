@@ -64,6 +64,32 @@ class ConversationTests(unittest.TestCase):
             self.problem("NOT_FOUND", self.store.update_conversation, user, item["id"], {"base_version": 1, "title": "越权"}, self.key())
             self.problem("NOT_FOUND", self.store.ask_conversation, user, item["id"], {"base_version": 1, "text": "验收材料"}, self.key())
 
+    def test_linked_task_result_returns_only_to_creator_conversation(self):
+        item = self.create(); other = self.create("另一会话")
+        payload = {"title": "核对资料", "note": "只分享任务说明", "assignee_id": self.reader["id"], "conversation_id": item["id"]}
+        self.problem("NOT_FOUND", self.store.task_preview, self.reader, payload, self.key())
+        preview = self.store.task_preview(self.writer, payload, self.key())
+        task = self.store.confirm_task(self.writer, preview["id"], {}, self.key())
+        self.assertEqual(self.store.conversation_messages(self.writer, other["id"])["related_tasks"], [])
+        self.problem("NOT_FOUND", self.store.conversation_messages, self.reader, item["id"])
+        self.assertNotIn("conversation_id", self.store.tasks(self.reader)[0])
+        self.problem("TASK_ROLE_REQUIRED", self.store.update_task, self.writer, task["id"], {"status": "completed", "base_version": 1, "result_note": "无权完成"}, self.key())
+        result = {"status": "completed", "base_version": 1, "result_note": "已核对并登记"}
+        key = self.key()
+        first = self.store.update_task(self.reader, task["id"], result, key)
+        self.assertEqual(self.store.update_task(self.reader, task["id"], result, key), first)
+        linked = self.store.conversation_messages(self.writer, item["id"])["related_tasks"]
+        self.assertEqual([(x["status"], x["result_note"]) for x in linked], [("completed", "已核对并登记")])
+
+    def test_task_preview_cannot_confirm_after_conversation_archived(self):
+        item = self.create()
+        payload = {"title": "核对", "assignee_id": self.reader["id"], "conversation_id": item["id"]}
+        preview = self.store.task_preview(self.writer, payload, self.key())
+        self.store.update_conversation(self.writer, item["id"], {"base_version": 1, "status": "archived"}, self.key())
+        self.problem("CONVERSATION_ARCHIVED", self.store.confirm_task, self.writer, preview["id"], {}, self.key())
+        self.problem("CONVERSATION_ARCHIVED", self.store.task_preview, self.writer, payload, self.key())
+        self.assertEqual(self.store.tasks(self.writer), [])
+
     def test_messages_are_isolated_and_legacy_records_are_not_reassigned(self):
         legacy = self.store.ask(self.writer, {"question": "旧问题验收材料"}, self.key())
         a, b = self.create("甲"), self.create("乙")

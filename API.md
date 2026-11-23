@@ -14,6 +14,8 @@
 
 本文件描述本批已实现接口。软件修订 0.12.0；完整富文本编辑器、完整工单与完整V1.0.0尚未完成，项目根V1_ACCEPTANCE.md保留全部差距。前缀 `/api/workbench`，写入用 POST 或下表指定的 PATCH；除文件上传使用 multipart 外，均用 JSON。每次返回 `X-Request-Id`；普通成功为 `{data,request_id}`，错误为 `{error:{code,message},request_id}`。新增按需模型接口/状态/安全限制见[AI_SETUP.md](AI_SETUP.md)，默认不启用模型。
 
+待办预览可选 `conversation_id`，仅允许创建人关联本人活跃会话，确认时再次检查，归档后不得新建；处理人不因此取得会话权限。任务完成可填写 `result_note`（最多 2000 字），创建人通过自己的会话消息接口读取 `related_tasks` 并手动刷新；结果只对任务参与者及所属会话创建人可见，不自动对外发送。
+
 ## 会话与安全
 
 - GET `/health`：不含私人内容的模式/版本存活信息；不代替数据库写入、模型、负载或备份验收。

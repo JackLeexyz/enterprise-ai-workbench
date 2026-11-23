@@ -16,7 +16,7 @@
     categories: [], sourceCategory: "all", adminCategories: [], adminUsers: [], catalogTab: "templates",
     accountQuery: "", accountFilter: "all", adminUsersError: "", adminCategoriesError: "",
     conversations: [], legacyMessages: [], activeConversation: null, conversation: null,
-    nextChatCursor: null, currentChatCursor: null, chatLoading: false, chatError: "",
+    nextChatCursor: null, currentChatCursor: null, chatLoading: false, chatError: "", relatedTasks: [],
     chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false,
     ai: { ready: false, mode: "offline_keyword" },
     acceptance: { projects: [], project: null, busy: false }
@@ -321,13 +321,13 @@
   }
   async function loadConversation(id, cursor = null) {
     const generation = ++chatGeneration, epoch = chatEpoch;
-    Object.assign(state, { activeConversation: id || null, conversation: null, messages: [], chatError: "", chatLoading: true, nextChatCursor: null, currentChatCursor: cursor });
+    Object.assign(state, { activeConversation: id || null, conversation: null, messages: [], relatedTasks: [], chatError: "", chatLoading: true, nextChatCursor: null, currentChatCursor: cursor });
     render();
     try {
       const result = await api(id ? `/conversations/${id}/messages${cursor ? "?cursor=" + encodeURIComponent(cursor) : ""}` : "/messages");
       if (generation !== chatGeneration || epoch !== chatEpoch) return;
       if (id) {
-        Object.assign(state, { conversation: result.conversation, messages: result.messages, nextChatCursor: result.next_cursor });
+        Object.assign(state, { conversation: result.conversation, messages: result.messages, relatedTasks: result.related_tasks || [], nextChatCursor: result.next_cursor });
         state.conversations = state.conversations.map(item => item.id === id ? result.conversation : item);
       } else { state.legacyMessages = result; state.messages = result; }
     } catch (error) {
@@ -340,12 +340,13 @@
   async function createChat() {
     if (state.chatCreating) throw new Error("正在创建会话，请稍候。");
     state.chatCreating = true;
+    if (state.page === "module" && state.activeModule === "assistant") render();
     const generation = chatGeneration, epoch = chatEpoch;
     const key = createChatKey || (createChatKey = crypto.randomUUID());
     let result;
     try { result = await api("/conversations", { title: "新会话" }, { key }); }
     catch (error) { if (error.status && error.status < 500 && error.status !== 401) createChatKey = null; throw error; }
-    finally { if (epoch === chatEpoch) state.chatCreating = false; }
+    finally { if (epoch === chatEpoch) { state.chatCreating = false; if (state.page === "module" && state.activeModule === "assistant") render(); } }
     if (epoch !== chatEpoch) return null;
     createChatKey = null;
     state.conversations = [result, ...state.conversations.filter(item => item.id !== result.id)].slice(0, 50);
@@ -433,8 +434,10 @@
     modal("审核当前修订", `<form id="review-decision-form" data-form="review-decision" data-id="${id}"><p class="notice">${esc(state.editor.title)} / r${state.editor.revision}</p><label class="form-field">审核结果<select name="decision"><option value="approved">通过</option><option value="rejected">退回修改</option></select></label><label class="form-field">审核意见<textarea name="note" maxlength="2000" rows="4"></textarea></label></form>`, button("取消", "x", "close-dialog") + formButton("确认审核结果", "check", "review-decision-form"));
   }
   function newTask() {
+    if (state.page === "module" && state.activeModule === "assistant" && (state.chatCreating || state.chatLoading || state.chatError)) throw new Error("请先等待当前会话加载完成。");
     pendingPreview = null;
-    modal("新建待办", `<form id="task-form" data-form="task"><label class="form-field">任务标题<input name="title" maxlength="120" required></label><label class="form-field">补充说明<textarea name="note" maxlength="2000" rows="3"></textarea></label><div class="field-pair"><label class="form-field">负责人<select name="assignee_id">${state.users.map(item => `<option value="${item.id}" ${item.id === state.user.id ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label><label class="form-field">截止日期<input name="due_date" type="date"></label></div></form>`, button("取消", "x", "close-dialog") + formButton("预览任务", "scan-eye", "task-form"));
+    const conversationId = state.page === "module" && state.activeModule === "assistant" && state.conversation?.status === "active" && !state.chatLoading && !state.chatError && !state.currentChatCursor ? state.activeConversation : null;
+    modal("新建待办", `<form id="task-form" data-form="task">${conversationId ? `<input type="hidden" name="conversation_id" value="${esc(conversationId)}"><p class="notice">任务状态和处理结果将回到当前会话；负责人不能查看会话内容。</p>` : ""}<label class="form-field">任务标题<input name="title" maxlength="120" required></label><label class="form-field">补充说明<textarea name="note" maxlength="2000" rows="3"></textarea></label><div class="field-pair"><label class="form-field">负责人<select name="assignee_id">${state.users.map(item => `<option value="${item.id}" ${item.id === state.user.id ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label><label class="form-field">截止日期<input name="due_date" type="date"></label></div></form>`, button("取消", "x", "close-dialog") + formButton("预览任务", "scan-eye", "task-form"));
   }
   function taskDialog(id) {
     const task = state.tasks.find(item => item.id === id);
@@ -444,11 +447,11 @@
     if (!["completed", "canceled"].includes(task.rawStatus)) {
       if (task.assignee_id === state.user.id) {
         if (task.rawStatus === "pending") footer += button("开始处理", "play", "task-status", true, `data-id="${id}" data-status="in_progress"`);
-        footer += button("标记完成", "check", "task-status", false, `data-id="${id}" data-status="completed"`);
+        footer += button("标记完成", "check", "task-complete", false, `data-id="${id}"`);
       }
       if (task.creator_id === state.user.id) footer += button("取消任务", "circle-x", "task-status", false, `data-id="${id}" data-status="canceled"`);
     }
-    modal(task.title, `<dl class="task-details"><dt>状态</dt><dd>${status(task.status)}</dd><dt>负责人</dt><dd>${esc(task.assignee_name)}</dd><dt>截止日期</dt><dd>${esc(task.due)}</dd><dt>补充说明</dt><dd>${esc(task.note || "无")}</dd><dt>记录版本</dt><dd>${task.version}</dd></dl>`, footer);
+    modal(task.title, `<dl class="task-details"><dt>状态</dt><dd>${status(task.status)}</dd><dt>负责人</dt><dd>${esc(task.assignee_name)}</dd><dt>截止日期</dt><dd>${esc(task.due)}</dd><dt>补充说明</dt><dd>${esc(task.note || "无")}</dd>${task.rawStatus === "completed" ? `<dt>处理结果</dt><dd>${esc(task.result_note || "未填写")}</dd>` : ""}<dt>记录版本</dt><dd>${task.version}</dd></dl>`, footer);
   }
   async function admin() {
     await navigate(async () => {
@@ -487,7 +490,7 @@
     keys.clear();
     chatEpoch++; chatGeneration++; createChatKey = null;
     state.acceptance = { projects: [], project: null, busy: false };
-    Object.assign(state, { conversations: [], legacyMessages: [], activeConversation: null, conversation: null, chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false, chatError: "", chatLoading: false, currentChatCursor: null, nextChatCursor: null });
+    Object.assign(state, { conversations: [], legacyMessages: [], activeConversation: null, conversation: null, relatedTasks: [], chatDrafts: {}, pendingChats: {}, chatSending: null, chatCreating: false, chatError: "", chatLoading: false, currentChatCursor: null, nextChatCursor: null });
     Object.assign(state, { user: null, sources: [], imports: [], importTargets: {}, importUsage: null, documents: [], reviews: [], tasks: [], messages: [], users: [], categories: [], templates: [], adminData: null, adminUsers: [], adminCategories: [], adminFeedback: [], adminTemplates: [], publications: [], editor: null, dirty: false, baseline: "", undo: [], recovery: null, newDocumentDraft: null, page: "home", activeModule: null });
     render(true);
   }
@@ -816,7 +819,12 @@
     if (name === "confirm-task") {
       if (!pendingPreview) return;
       const result = await api(`/task-previews/${pendingPreview.id}/confirm`, {});
-      await records(); closeDialog(); render(); taskDialog(result.id); return toast("任务已确认并写入演示库");
+      await records(); if (pendingPreview.conversation_id && state.activeConversation === pendingPreview.conversation_id) await refreshConversation(); closeDialog(); render(); taskDialog(result.id); return toast("任务已确认并写入演示库");
+    }
+    if (name === "task-complete") {
+      const task = state.tasks.find(item => item.id === id);
+      if (!task || task.assignee_id !== state.user.id) throw new Error("任务已变化，请重新读取。");
+      return modal("完成待办", `<form id="task-complete-form" data-form="task-complete" data-id="${esc(id)}" data-version="${task.version}"><fieldset data-task-fields><label class="form-field">处理结果（可选）<textarea name="result_note" maxlength="2000" rows="4"></textarea></label></fieldset><p class="notice">结果对任务创建人可见；不会自动发送外部消息。</p></form>`, button("取消", "x", "close-dialog") + formButton("确认完成", "check", "task-complete-form"));
     }
     if (name === "task-status") {
       const task = state.tasks.find(item => item.id === id);
@@ -846,6 +854,14 @@
     const type = form.dataset.form;
     const intent = () => ({ key: form.dataset.intentKey || (form.dataset.intentKey = crypto.randomUUID()) });
     if (type === "acceptance-check") return checkAcceptance(data.get("project_id"));
+    if (type === "task-complete") {
+      const payload = form.pendingTaskResult || { status: "completed", base_version: Number(form.dataset.version), result_note: data.get("result_note") };
+      form.pendingTaskResult = payload;
+      const fields = form.querySelector("[data-task-fields]"); fields.disabled = true;
+      try { await api(`/tasks/${encodeURIComponent(form.dataset.id)}/status`, payload, intent()); }
+      catch (error) { if (error.status >= 400 && error.status < 500) { delete form.pendingTaskResult; delete form.dataset.intentKey; fields.disabled = false; } throw error; }
+      await records(); closeDialog(); render(); return toast("处理结果已保存。");
+    }
     if (type === "acceptance-review") {
       const { project, version, review, action } = form.dataset;
       const fields = form.querySelector("[data-review-fields]");

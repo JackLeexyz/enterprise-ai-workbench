@@ -72,6 +72,7 @@ async function run() {
     await assignee.getByRole("button", { name: /我的待办/ }).first().click();
     await assignee.getByRole("button", { name: /补件：功能验收清单/ }).filter({ hasText: "待处理" }).first().click();
     await assignee.getByRole("dialog").getByRole("button", { name: "标记完成" }).click();
+    await assignee.getByRole("dialog").getByRole("button", { name: "确认完成" }).click();
     await assignee.getByRole("button", { name: "工作台", exact: true }).first().click();
     await assignee.getByRole("button", { name: "项目验收助手", exact: true }).click();
     await check(assignee);
@@ -146,6 +147,7 @@ async function run() {
     await assignee.getByRole("button", { name: /我的待办/ }).first().click();
     await assignee.getByRole("button", { name: /补件：施工说明/ }).filter({ hasText: "待处理" }).click();
     await assignee.getByRole("dialog").getByRole("button", { name: "标记完成" }).click();
+    await assignee.getByRole("dialog").getByRole("button", { name: "确认完成" }).click();
     await desktop.locator('form[data-form="acceptance-check"] button[type="submit"]').click();
     await newItem.getByText("待办：已完成", { exact: true }).waitFor();
     await newItem.getByRole("button", { name: "登记到件" }).click();
